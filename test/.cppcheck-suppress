@@ -1,0 +1,22 @@
+# cppcheck suppression list
+# 형식: [error-id]:[file-pattern]:[line] 또는 [error-id]:[file-pattern]
+
+# GTK4 gpointer 캐스트 관련 false positive
+invalidPointerCast:chat_program/src/client/*.c
+
+# MySQL C API 헤더에서 발생하는 경고 제외
+*:/usr/include/mysql/*.h
+*:/usr/include/mysql/mysql.h
+
+# GTK4 헤더 경고 제외
+*:/usr/include/gtk-4.0/*.h
+*:/usr/include/glib-2.0/*.h
+
+# g_idle_add 콜백 함수 서명 (gpointer 파라미터) false positive
+invalidFunctionArg:chat_program/src/client/*.c
+
+# 외부 라이브러리 함수 반환값 무시 (GTK4 시그널 연결)
+checkLibraryUseReturnValue
+
+# GLib 메모리 관리 false positive (g_new/g_free 쌍)
+memleak:chat_program/src/client/*.c

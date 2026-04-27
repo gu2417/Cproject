@@ -1,0 +1,49 @@
+---
+BasedOnStyle: LLVM
+Language: Cpp
+
+# 들여쓰기
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+
+# 줄 길이
+ColumnLimit: 100
+
+# 중괄호 스타일 (Allman: 중괄호를 새 줄에)
+BreakBeforeBraces: Allman
+
+# 포인터 정렬
+PointerAlignment: Right
+
+# 공백
+SpaceAfterCStyleCast: false
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesInCStyleCastParentheses: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# 빈 줄
+MaxEmptyLinesToKeep: 2
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+# include 정렬
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+
+# 함수 인자
+AllowAllParametersOfDeclarationOnNextLine: true
+BinPackArguments: true
+BinPackParameters: true
+
+# 단일 라인 허용
+AllowShortBlocksOnASingleLine: Empty
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# 주석
+ReflowComments: false
+SpacesBeforeTrailingComments: 2
