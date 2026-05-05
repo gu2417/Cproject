@@ -24,7 +24,7 @@ if "%1"=="clean" (
 )
 
 REM Build command
-set "BUILD_CMD=export PATH=/mingw64/bin:/usr/bin:/bin:$PATH"
+set "BUILD_CMD=export PATH=/mingw64/bin:/mingw64/lib/lib:/usr/bin:/bin:$PATH"
 set "BUILD_CMD=!BUILD_CMD! ^&^& export PKG_CONFIG_PATH=/mingw64/lib/pkgconfig"
 set "BUILD_CMD=!BUILD_CMD! ^&^& cd /c/Users/nialg/test/chat_program"
 

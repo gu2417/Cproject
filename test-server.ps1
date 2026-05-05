@@ -28,7 +28,7 @@ Write-Host "[TEST] Starting server on port 8080 for $Duration seconds..." -Foreg
 Write-Host ""
 
 $CMD = @"
-export PATH=/mingw64/bin:/usr/bin:/bin:`$PATH
+export PATH=/mingw64/bin:/mingw64/lib/lib:/usr/bin:/bin:`$PATH
 cd /c/Users/nialg/test/chat_program
 timeout $Duration ./src/server/chat_server.exe 2>&1 || true
 "@

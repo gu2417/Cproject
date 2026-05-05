@@ -2,7 +2,7 @@
 
 UNAME := $(shell uname -s 2>/dev/null || echo Windows)
 
-CC        ?= gcc
+CC        := gcc
 CSTD      := -std=c11 -Wall -Wextra -Wpedantic
 OPT       := -O2
 INCLUDES  := -Isrc/common
@@ -21,21 +21,21 @@ ifeq ($(OS),Windows_NT)
     endif
 endif
 
-# MySQL flags (auto-detected via pkg-config)
-MYSQL_CFLAGS := 
-MYSQL_LIBS   := 
+# MySQL flags
+MYSQL_CFLAGS := -IC:/msys64/mingw64/include/include
+MYSQL_LIBS   := -LC:/msys64/mingw64/lib/lib -lmysql
 
 # Platform-specific flags
 ifeq ($(UNAME),Linux)
-    LDFLAGS_SRV := -lpthread
+    LDFLAGS_SRV := -lpthread $(MYSQL_LIBS)
     LDFLAGS_CLI := -lpthread $(GTK4_LIBS)
-    CFLAGS_SRV  := 
+    CFLAGS_SRV  := $(MYSQL_CFLAGS)
     CFLAGS_CLI  := $(GTK4_CFLAGS)
 endif
 ifneq (,$(findstring MINGW,$(UNAME))$(findstring Windows,$(UNAME)))
-    LDFLAGS_SRV := -lpthread -lws2_32
+    LDFLAGS_SRV := -lpthread -lws2_32 $(MYSQL_LIBS)
     LDFLAGS_CLI := -lpthread -lws2_32 $(GTK4_LIBS)
-    CFLAGS_SRV  := 
+    CFLAGS_SRV  := $(MYSQL_CFLAGS)
     CFLAGS_CLI  := $(GTK4_CFLAGS)
     EXE         := .exe
 endif

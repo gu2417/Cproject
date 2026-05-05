@@ -76,7 +76,7 @@ CREATE TABLE rooms (
 CREATE TABLE room_members (
     room_id INT NOT NULL,
     user_id VARCHAR(20) NOT NULL,
-    open_nick VARCHAR(30) COMMENT '오픈채팅 닉네임',
+    open_nick VARCHAR(30) COMMENT 'Open chat nickname',
     is_admin TINYINT DEFAULT 0,
     is_muted TINYINT DEFAULT 0,
     joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -165,5 +165,11 @@ CREATE TABLE room_invites (
 INSERT INTO users (user_id, password_hash, nickname, profile_msg, online_status)
 VALUES ('system', SHA2('', 256), 'System', 'System announcements', 1);
 
+INSERT INTO users (user_id, password_hash, nickname, profile_msg, online_status)
+VALUES
+    ('alice', SHA2('alice123', 256), 'Alice', 'Hello, I''m Alice', 0),
+    ('bob', SHA2('bob123', 256), 'Bob', 'Hi, I''m Bob', 0),
+    ('charlie', SHA2('charlie123', 256), 'Charlie', 'Hey there!', 0);
+
 INSERT INTO user_settings (user_id)
-VALUES ('system');
+VALUES ('system'), ('alice'), ('bob'), ('charlie');

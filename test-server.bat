@@ -22,7 +22,7 @@ if not exist "src\server\chat_server.exe" (
 
 REM Run server with timeout
 set "BASH_PATH=C:\msys64\usr\bin\bash.exe"
-call "!BASH_PATH!" -l -c "export PATH=/mingw64/bin:/usr/bin:/bin:$PATH && cd /c/Users/nialg/test/chat_program && timeout !DURATION! ./src/server/chat_server.exe 2>&1 || true"
+call "!BASH_PATH!" -l -c "export PATH=/mingw64/bin:/mingw64/lib/lib:/usr/bin:/bin:$PATH && cd /c/Users/nialg/test/chat_program && timeout !DURATION! ./src/server/chat_server.exe 2>&1 || true"
 
 echo.
 echo [TEST] Server test completed.
