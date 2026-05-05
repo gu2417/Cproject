@@ -24,7 +24,6 @@ function Write-Warning {
 
 # Configuration
 $MSYS2_PATH = "C:\msys64"
-$MINGW_BIN = "$MSYS2_PATH\mingw64\bin"
 $BASH_EXE = "$MSYS2_PATH\usr\bin\bash.exe"
 
 # Check prerequisites
@@ -38,7 +37,7 @@ if (!(Test-Path $BASH_EXE)) {
 
 # Build command
 $BUILD_CMD = @"
-export PATH=$MINGW_BIN`:/usr/bin:/bin:`$PATH
+export PATH=/mingw64/bin:/mingw64/lib/lib:/usr/bin:/bin:`$PATH
 export PKG_CONFIG_PATH=/mingw64/lib/pkgconfig
 cd /c/Users/nialg/test/chat_program
 "@

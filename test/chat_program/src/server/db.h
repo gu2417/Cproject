@@ -2,11 +2,10 @@
 #define DB_H
 
 #include <stdio.h>
-
-/* MySQL stub types for compilation without MySQL headers */
-typedef void MYSQL;
-typedef void MYSQL_STMT;
-typedef void MYSQL_BIND;
+#ifdef _WIN32
+    #include <winsock2.h>
+#endif
+#include <mysql.h>
 
 /* Database connection */
 MYSQL *db_connect(void);
