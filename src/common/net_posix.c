@@ -1,6 +1,4 @@
-#ifdef _WIN32
-    #error "This file should not be compiled on Windows"
-#endif
+#ifndef _WIN32
 
 #include "net_compat.h"
 #include <fcntl.h>
@@ -35,3 +33,5 @@ int sock_set_nonblock(SOCKET s)
 
     return fcntl(s, F_SETFL, flags | O_NONBLOCK);
 }
+
+#endif
