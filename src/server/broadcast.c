@@ -50,6 +50,15 @@ void bcast_all(const char *packet, int exclude_fd)
     MUTEX_UNLOCK(g_sessions_mutex);
 }
 
+void notify_user(int socket_fd, const char *packet)
+{
+    if (socket_fd <= 0 || !packet) {
+        return;
+    }
+
+    send(socket_fd, packet, strlen(packet), SEND_FLAGS);
+}
+
 void send_packet_to_user(const char *user_id, const char *packet)
 {
     if (!user_id || !packet) {
