@@ -1,9 +1,0 @@
-# OMC tooling session state
-.omc/
-
-# Build artifacts
-*.o
-*.obj
-*.exe
-server/chat_server
-client/chat_client
