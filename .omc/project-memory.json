@@ -1,0 +1,349 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1778081929447,
+  "projectRoot": "/mnt/c/Project/Cproject",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "reference": {
+      "path": "reference",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1778081929422,
+      "keyFiles": [
+        "client_main.c",
+        "server_main.c"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "docs/README.md",
+      "accessCount": 4,
+      "lastAccessed": 1778084675084,
+      "type": "file"
+    },
+    {
+      "path": "docs/uiux/console_ui_design.md",
+      "accessCount": 3,
+      "lastAccessed": 1778084669376,
+      "type": "file"
+    },
+    {
+      "path": "requirements.md",
+      "accessCount": 2,
+      "lastAccessed": 1778082236301,
+      "type": "file"
+    },
+    {
+      "path": "reference/server_main.c",
+      "accessCount": 2,
+      "lastAccessed": 1778082236347,
+      "type": "file"
+    },
+    {
+      "path": "reference/client_main.c",
+      "accessCount": 2,
+      "lastAccessed": 1778082236571,
+      "type": "file"
+    },
+    {
+      "path": "docs/uiux/menu_flow.md",
+      "accessCount": 2,
+      "lastAccessed": 1778083719978,
+      "type": "file"
+    },
+    {
+      "path": "docs/uiux/screen_inventory.md",
+      "accessCount": 2,
+      "lastAccessed": 1778084635928,
+      "type": "file"
+    },
+    {
+      "path": "docs/00_overview/project_summary.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082277153,
+      "type": "file"
+    },
+    {
+      "path": "docs/00_overview/architecture.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082309764,
+      "type": "file"
+    },
+    {
+      "path": "docs/01_protocol/packet_format.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082340748,
+      "type": "file"
+    },
+    {
+      "path": "docs/01_protocol/packet_reference.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082397791,
+      "type": "file"
+    },
+    {
+      "path": "docs/02_data/file_schema.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082448816,
+      "type": "file"
+    },
+    {
+      "path": "docs/02_data/in_memory_structures.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082486247,
+      "type": "file"
+    },
+    {
+      "path": "docs/03_server/server_architecture.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082517142,
+      "type": "file"
+    },
+    {
+      "path": "docs/03_server/module_auth.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082545356,
+      "type": "file"
+    },
+    {
+      "path": "docs/03_server/module_friend.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082574509,
+      "type": "file"
+    },
+    {
+      "path": "docs/03_server/module_room.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082610572,
+      "type": "file"
+    },
+    {
+      "path": "docs/03_server/module_dm.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082642598,
+      "type": "file"
+    },
+    {
+      "path": "docs/03_server/module_message.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082681507,
+      "type": "file"
+    },
+    {
+      "path": "docs/03_server/module_broadcast.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082709267,
+      "type": "file"
+    },
+    {
+      "path": "docs/04_client/client_architecture.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082744998,
+      "type": "file"
+    },
+    {
+      "path": "docs/04_client/console_ui_design.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082785281,
+      "type": "file"
+    },
+    {
+      "path": "docs/04_client/menu_flow.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082822163,
+      "type": "file"
+    },
+    {
+      "path": "docs/05_features/FR_A_account.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082854087,
+      "type": "file"
+    },
+    {
+      "path": "docs/05_features/FR_F_friend.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082884644,
+      "type": "file"
+    },
+    {
+      "path": "docs/05_features/FR_D_dm.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082911807,
+      "type": "file"
+    },
+    {
+      "path": "docs/05_features/FR_G_group_chat.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082945018,
+      "type": "file"
+    },
+    {
+      "path": "docs/05_features/FR_O_open_chat.md",
+      "accessCount": 1,
+      "lastAccessed": 1778082974366,
+      "type": "file"
+    },
+    {
+      "path": "docs/05_features/FR_M_message.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083019672,
+      "type": "file"
+    },
+    {
+      "path": "docs/05_features/FR_N_notification.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083054588,
+      "type": "file"
+    },
+    {
+      "path": "docs/05_features/FR_C_customization.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083082185,
+      "type": "file"
+    },
+    {
+      "path": "docs/06_file_structure/project_layout.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083121537,
+      "type": "file"
+    },
+    {
+      "path": "docs/08_nonfunctional/nfr_checklist.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083191724,
+      "type": "file"
+    },
+    {
+      "path": "docs/09_development/development_phases.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083231275,
+      "type": "file"
+    },
+    {
+      "path": "docs/09_development/implementation_guide.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083276579,
+      "type": "file"
+    },
+    {
+      "path": "docs/security/security_overview.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083356567,
+      "type": "file"
+    },
+    {
+      "path": "docs/security/password_hashing.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083366037,
+      "type": "file"
+    },
+    {
+      "path": "docs/security/input_validation.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083380997,
+      "type": "file"
+    },
+    {
+      "path": "docs/features/FR_A_account.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083488120,
+      "type": "file"
+    },
+    {
+      "path": "docs/features/FR_F_friend.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083494946,
+      "type": "file"
+    },
+    {
+      "path": "docs/features/FR_G_group_chat.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083495377,
+      "type": "file"
+    },
+    {
+      "path": "docs/features/FR_M_message.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083495791,
+      "type": "file"
+    },
+    {
+      "path": "docs/features/FR_N_notification.md",
+      "accessCount": 1,
+      "lastAccessed": 1778083496119,
+      "type": "file"
+    },
+    {
+      "path": "docs/features/FR_D_dm.md",
+      "accessCount": 1,
+      "lastAccessed": 1778084254060,
+      "type": "file"
+    },
+    {
+      "path": "docs/features/FR_O_open_chat.md",
+      "accessCount": 1,
+      "lastAccessed": 1778084254418,
+      "type": "file"
+    },
+    {
+      "path": "docs/features/FR_C_customization.md",
+      "accessCount": 1,
+      "lastAccessed": 1778084254828,
+      "type": "file"
+    },
+    {
+      "path": "docs/uiux/dialogs_and_actions.md",
+      "accessCount": 1,
+      "lastAccessed": 1778084382306,
+      "type": "file"
+    },
+    {
+      "path": "docs/uiux/help_and_guides.md",
+      "accessCount": 1,
+      "lastAccessed": 1778084431951,
+      "type": "file"
+    },
+    {
+      "path": "docs/uiux/error_and_recovery.md",
+      "accessCount": 1,
+      "lastAccessed": 1778084477804,
+      "type": "file"
+    },
+    {
+      "path": "docs/uiux/notification_patterns.md",
+      "accessCount": 1,
+      "lastAccessed": 1778084530416,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}
