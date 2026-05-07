@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": ["Bash(make:*)", "Bash(gcc:*)", "Bash(./server.exe:*)", "Bash(./client.exe:*)"],
+    "deny": ["Bash(rm -rf:*)", "Bash(git push --force:*)"]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'REMINDER: This project has rules in .claude/rules/. Read them before writing any C code.'"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+# 빌드 결과물
+*.exe
+*.o
+
+# 런타임 데이터 파일 (서버 실행 시 생성)
+data/*.txt
+
+# IDE
+.idea/
+
+# OMC 내부 상태
+.omc/state/
+.omc/sessions/
+chat_program/.omc/
