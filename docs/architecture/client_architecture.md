@@ -34,24 +34,39 @@ src/client/
 ```c
 /* state.h */
 typedef struct {
-    SOCKET  sock;                  /* 서버 소켓 */
-    int     logged_in;             /* 0=미로그인, 1=로그인 */
+    SOCKET  sock;                       /* 서버 소켓 */
+    int     logged_in;                  /* 0=미로그인, 1=로그인 */
     char    user_id[21];
     char    nickname[21];
-    int     online_status;         /* 1=online, 2=busy, 3=invisible */
-    int     current_room_id;       /* 0=로비, >0=채팅방 */
+    int     online_status;              /* 1=online, 2=busy, 3=invisible */
+    int     current_room_id;            /* 0=로비, >0=채팅방 */
     char    current_room_name[31];
 
-    /* 설정 */
-    char    msg_color[16];         /* 기본: "cyan" */
-    char    nick_color[16];        /* 기본: "yellow" */
-    char    theme[11];             /* "dark" / "light" */
-    int     ts_format;             /* 0=HH:MM, 1=HH:MM:SS, 2=MM-DD HH:MM */
-    int     dnd;                   /* 0=알림 켜짐, 1=방해금지 */
+    /* DM 화면 컨텍스트 (FR-D01~D05) */
+    char    current_dm_partner[21];     /* 현재 DM 대화 상대 ID, 빈 값 = DM 화면 밖 */
+    char    current_dm_partner_nick[21];/* 상대 닉네임 캐시 (히스토리 출력용) */
+
+    /* 알림 설정 (FR-N04, FR-N06) */
+    int     muted_rooms[32];            /* 알림 무음 room_id 목록 */
+    int     muted_count;                /* muted_rooms 유효 항목 수 */
+
+    /* 연결 상태 (NFR-03, P2 PING/PONG) */
+    int     connected;                  /* 1=서버 연결 정상, 0=재연결 중 */
+    int     response_received;          /* 마지막 요청 응답 수신 여부 (재시도 판정) */
+    time_t  last_pong;                  /* 마지막 PONG 수신 시각 (P2+) */
+
+    /* 설정 (FR-C01~C06) */
+    char    msg_color[16];              /* 기본: "cyan" */
+    char    nick_color[16];             /* 기본: "yellow" */
+    char    theme[11];                  /* "dark" / "light" */
+    int     ts_format;                  /* 0=HH:MM, 1=HH:MM:SS, 2=MM-DD HH:MM */
+    int     dnd;                        /* 0=알림 켜짐, 1=방해금지 */
 } ClientState;
 
 extern ClientState g_state;
 ```
+
+> **메모**: `current_dm_partner`는 빈 문자열 비교(`g_state.current_dm_partner[0] == '\0'`)로 DM 화면 진입 여부를 판정한다. 메인 로비/채팅방 진입 시 반드시 `g_state.current_dm_partner[0] = '\0'`로 클리어한다.
 
 ---
 
@@ -188,8 +203,8 @@ void display_chat_message(const char *from_nick, const char *timestamp,
         case 2:  /* 귓속말 */
             printf("[귓속말] %s: %s\n", from_nick, content);
             break;
-        case 3:  /* /me 액션 */
-            printf("* %s\n", content);  /* content에 이미 닉네임 포함 */
+        case 3:  /* /me 액션 — 서버는 raw 동작만 송신, 클라이언트가 닉네임 합성 */
+            printf("* %s %s\n", from_nick, content);
             break;
     }
 }

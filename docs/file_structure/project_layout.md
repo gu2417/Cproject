@@ -2,6 +2,22 @@
 
 GTK4/MySQL 제거, 콘솔 UI + 텍스트 파일 I/O 반영한 최종 파일 구조.
 
+## 요구사항 대비 변경 사항
+
+requirements.md §10 (예상 파일 구조)와 본 문서의 차이를 한곳에 명시한다. 모든 변경은 "콘솔 UI + 텍스트 파일" 결정의 결과이며 기능 요구사항(FR-*)과 패킷 정의는 그대로 보존한다.
+
+| 영역 | requirements.md | 실제 docs/구현 | 사유 |
+|------|-----------------|----------------|------|
+| `server/db.c/h` | MySQL 연결 래퍼 | `server/file_io.c/h` | MySQL → txt 파일 영속 (overview/project_summary.md 결정) |
+| `server/admin.c/h` | 관리자 명령 처리 | **삭제** | FR-ADM01~05 모두 Out-of-Scope (v2.1 이후) |
+| `client/app_window.c/h`, `screen_*.c/h`, `notify.c/h`, `css/*` | GTK4 위젯 트리·CSS 테마 | `client/menu_*.c/h` 7종 | GTK4 → 콘솔 메뉴 (모든 GUI 위젯 제거) |
+| `common/net_win.c` | Windows WinSock2 추상화 | `client/net.c` + 서버측 직접 호출 | 콘솔 단순화. 별도 추상화 레이어 불필요. 클라이언트 소켓·송수신 헬퍼는 `client/net.c`에 통합. |
+| `common/types.h` | UserSettings 등 | UserRecord, RoomRecord, MessageRecord, FriendRecord, RoomMemberRecord, DmReadRecord, RoomInviteRecord, UserSettingsRecord, RoomReadRecord 9종 | `database/in_memory_structures.md` 참조. txt 직렬화 평탄 구조. |
+| `common/protocol.h` | 패킷 타입 상수 | 동일 (변경 없음) | — |
+| `sql/schema.sql` | DDL 스크립트 | **삭제** | 텍스트 파일은 빌드 시 `data/` 폴더 + 빈 txt 파일만 생성 (build_guide.md §2) |
+
+> `architecture/module_common.md`에 `common/` 모듈 상세를, `architecture/server_architecture.md`에 `file_io.c`·`router.c`·`user_store.c` 추가 모듈 설명이 있다.
+
 ```
 C_ChatProgram/
 ├── chat_program/
@@ -72,17 +88,17 @@ C_ChatProgram/
 │   └── user_settings.txt           # 유저 설정 (user_id//msg_color//nick_color//theme//...)
 │
 ├── docs/                           # 설계 문서 (현재 폴더)
-│   ├── README.md
-│   ├── 00_overview/
-│   ├── 01_protocol/
-│   ├── 02_data/
-│   ├── 03_server/
-│   ├── 04_client/
-│   ├── 05_features/
-│   ├── 06_file_structure/
-│   ├── 07_build/
-│   ├── 08_nonfunctional/
-│   └── 09_development/
+│   ├── README.md                   # 문서 인덱스
+│   ├── overview/                   # 프로젝트 개요·시스템 아키텍처
+│   ├── architecture/               # 서버/클라이언트/모듈별 상세 (module_*.md)
+│   ├── file_structure/             # 본 문서 (project_layout.md)
+│   ├── uiux/                       # 콘솔 UI·화면 인벤토리·다이얼로그·알림 패턴
+│   ├── features/                   # FR_*.md (기능 요구사항 ↔ 패킷·UI 매핑)
+│   ├── security/                   # SHA-256·입력 검증·위협 모델
+│   ├── database/                   # txt 파일 스키마·인메모리 구조체
+│   ├── protocol/                   # 패킷 형식·전체 패킷 레퍼런스
+│   ├── build/                      # MinGW/MSVC 빌드 가이드
+│   └── development/                # Phase 0~3·구현 가이드라인·NFR 체크리스트
 │
 ├── reference/                      # 원본 참조 구현
 │   ├── server_main.c               # 참조용 서버 구현 (WinSock2, users.txt)

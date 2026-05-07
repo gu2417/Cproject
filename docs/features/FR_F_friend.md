@@ -126,19 +126,71 @@ C→S  FRIEND_BLOCK|<target_id>
 ```
 
 서버 처리:
-1. `friends.txt`에서 해당 레코드의 `status → 2` (blocked)
-2. 차단된 유저로부터의 DM 및 메시지 수신 차단
-3. 차단 유저는 친구 목록에서 숨김 처리
+1. `friends.txt`에서 (user_id=차단자, friend_id=피차단자) 레코드의 `status → 2` (blocked).
+   레코드가 없으면 신규 추가 (`status=2`로 직접 생성).
+2. 차단 관계는 **단방향 단일 레코드**로 표현. 양쪽이 서로를 차단한 경우 두 개의 레코드가 존재.
+3. 차단 유저는 차단자의 친구 목록에서 숨김 처리.
 
-차단 시 메시지 수신 차단 구현:
+### 차단 효과 매트릭스
+
+차단자 = `BLK`, 피차단자 = `TGT` 관점에서 모든 상호작용을 정의한다. 검사는 항상 **수신자 측 friends.txt**에서 (수신자, 발신자) 페어의 `status==2` 여부를 확인한다.
+
+| 상호작용 | BLK → TGT | TGT → BLK | 검사 위치 |
+|----------|-----------|-----------|-----------|
+| **DM 송신** | 허용(상대 무수신) | 차단 (`FRIEND_ADD_RES` 패턴 응답 없이 무시) | `handle_dm_send()` |
+| **친구 요청 (`FRIEND_ADD`)** | 허용(상대 무수신) | 차단 → `FRIEND_ADD_RES\|2` (BLOCKED) | `handle_friend_add()` |
+| **방 초대 (`ROOM_INVITE`)** | 허용 (BLK이 TGT를 초대 가능) | **차단** → `ROOM_INVITE_RES\|1`(NOT_FOUND 위장) | `handle_room_invite()` |
+| **같은 방 메시지 (브로드캐스트)** | 그대로 도달 (방 멤버 자격 우선) | 그대로 도달 (방 멤버 자격 우선) | 검사 없음 |
+| **귓속말 (`/w`)** | 허용 | 차단 (`WHISPER_RECV` 미전달) | `handle_whisper()` |
+| **친구 상태 변경 알림** | 미전송 (TGT가 BLK 친구 목록에서 숨김) | 미전송 | `notify_friend_status_change()` |
+| **유저 검색 결과** | 노출 | 노출 | 검사 없음 (검색은 차단과 무관) |
+
+> **핵심 원칙**: 차단은 **피차단자가 차단자에게 보내는 행동**을 막는다. 차단자가 상대를 보지 못하게 하는 효과는 클라이언트 표시 단계에서 처리한다.  
+> **방 멤버 자격 우선**: 같은 방에 이미 들어와 있는 메시지는 차단으로 막지 않는다. 차단 후에도 같은 방의 메시지는 받게 된다 — 방을 나가야 차단 효과가 적용된다 (FR-G05).  
+> **검색 노출 정책**: 차단된 유저도 `USER_SEARCH`에 노출된다. 차단 해제 후 다시 친구 추가하기 위해 필요하기 때문 (단, 클라이언트는 차단 표시를 원하면 친구 목록 status=2 검사 추가).
+
+### 차단 검사 헬퍼
+
 ```c
-/* handle_dm_send() 내부 */
-FriendRecord *fr = find_friend_record(to_id, from_id);
-if (fr && fr->status == 2) {
-    /* 차단 — 조용히 무시 (발신자에게 알림 없음) */
-    return;
+/* (수신자 입장에서) 발신자가 차단되었는지 검사 */
+int is_blocked_by(const char *receiver_id, const char *sender_id) {
+    for (int i = 0; i < g_friend_count; i++) {
+        if (strcmp(g_friends[i].user_id,   receiver_id) == 0 &&
+            strcmp(g_friends[i].friend_id, sender_id)   == 0 &&
+            g_friends[i].status == 2) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* DM 송신 시 차단 체크 */
+void handle_dm_send(const char *to_id, const char *content,
+                    ClientSession *sess) {
+    if (is_blocked_by(to_id, sess->user_id)) {
+        /* 조용히 무시 — 발신자에게 응답 없음 (차단 사실 노출 방지) */
+        return;
+    }
+    /* ... 정상 DM 처리 */
+}
+
+/* 방 초대 시 차단 체크 */
+void handle_room_invite(int room_id, const char *target_id,
+                        ClientSession *sess) {
+    if (is_blocked_by(target_id, sess->user_id)) {
+        /* NOT_FOUND로 위장 — 차단당했음을 알리지 않음 */
+        send_packet(sess->fd, "ROOM_INVITE_RES|1");
+        return;
+    }
+    /* ... 정상 초대 처리 */
 }
 ```
+
+### 차단 해제 정책
+
+차단 해제는 `FRIEND_DELETE`로 통일한다 (`status=2` 레코드 자체를 삭제). `status` 값을 0으로 되돌리는 정책은 사용하지 않는다 (file_schema.md §4 friends.txt status 값 정의 참조).
+
+해제 후 친구 관계는 자동 복원되지 **않는다**. 차단 이전에 accepted 친구였더라도 해제 후에는 일반 사용자(친구 아님)가 된다 — 다시 친구가 되려면 `FRIEND_ADD_REQ` 재요청 필요.
 
 ---
 

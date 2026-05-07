@@ -91,10 +91,10 @@
 |------|-----------|-------------|------|
 | C→S | `WHISPER` | `<to_nick>:<content>` | 귓속말 전송 (content-last) |
 | S→C | `WHISPER_RECV` | `<from_nick>:<timestamp>:<content>` | 귓속말 수신 (content-last) |
-| C→S | `MSG_DELETE` | `<room_id>:<msg_id>` | 메시지 삭제 |
-| S→C | `MSG_DELETED_NOTIFY` | `<room_id>:<msg_id>` | 삭제 알림 브로드캐스트 |
-| C→S | `MSG_EDIT` | `<room_id>:<msg_id>:<new_content>` | 메시지 수정 (5분 이내, content-last) |
-| S→C | `MSG_EDITED_NOTIFY` | `<room_id>:<msg_id>:<new_content>` | 수정 알림 브로드캐스트 (content-last) |
+| C→S | `MSG_DELETE` | `<room_id>:<msg_id>` | 메시지 삭제 (DM은 `room_id=0`) |
+| S→C | `MSG_DELETED_NOTIFY` | `<room_id>:<msg_id>` | 삭제 알림. DM(`room_id=0`)은 두 당사자에게만, 그룹은 방 브로드캐스트 |
+| C→S | `MSG_EDIT` | `<room_id>:<msg_id>:<new_content>` | 메시지 수정 (5분 이내, content-last, DM은 `room_id=0`) |
+| S→C | `MSG_EDITED_NOTIFY` | `<room_id>:<msg_id>:<new_content>` | 수정 알림. DM은 두 당사자에게만, 그룹은 방 브로드캐스트 (content-last) |
 | C→S | `MSG_REPLY` | `<room_id>:<reply_to_id>:<content>` | 답장 (content-last) |
 | S→C | `ROOM_MSG_RECV` | (위 Room 항목 참조) | 답장도 ROOM_MSG_RECV로 브로드캐스트 (reply_to_id 포함) |
 | C→S | `MSG_SEARCH` | `<room_id>:<keyword>` | 메시지 검색 (keyword는 content-last) |

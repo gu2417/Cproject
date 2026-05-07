@@ -55,6 +55,14 @@ void broadcast_system_msg(int room_id, const char *text);
 int  save_room_message(int room_id, const char *from_id,
                        const char *content, int reply_to,
                        int msg_type, int *out_msg_id);
+
+/* 외부 헬퍼 (다른 모듈) */
+extern ClientSession *find_session_by_id  (const char *user_id);
+extern ClientSession *find_session_by_nick(const char *nickname);
+extern int            is_blocked_by(const char *receiver_id,
+                                    const char *sender_id);   /* friend.h */
+extern const char    *resolve_display_nick(int room_id, const char *user_id,
+                                           int is_open);       /* room.h */
 ```
 
 ---
@@ -65,24 +73,39 @@ int  save_room_message(int room_id, const char *from_id,
 void handle_msg_delete(const char *user_id, int room_id, int msg_id,
                        ClientSession *sess) {
     MessageRecord *m = find_message_by_id(msg_id);
-    if (!m) return;
+    if (!m || m->is_deleted) return;
+    if (m->room_id != room_id) return;
+    if (m->msg_type == MSG_TYPE_SYSTEM) return;  /* 시스템 메시지 보호 */
 
-    /* 본인 메시지 또는 방장/관리자만 삭제 가능 */
-    if (strcmp(m->from_id, user_id) != 0 &&
-        !is_room_admin(room_id, user_id)) {
-        return;
+    int is_self = strcmp(m->from_id, user_id) == 0;
+    int is_dm   = (m->room_id == 0);
+
+    /* 권한 정책 (FR_M_message.md FR-M02 매트릭스):
+       - DM: 송신자 본인만 삭제 가능 (수신자는 불가)
+       - 그룹/오픈채팅: 본인 또는 방장/공동방장 */
+    if (is_dm) {
+        if (!is_self) return;
+    } else {
+        if (!is_self && !is_room_admin(room_id, user_id)) return;
     }
 
-    /* is_deleted = 1 */
     m->is_deleted = 1;
 
     WaitForSingleObject(g_file_mutex, INFINITE);
     update_message_deleted(FILE_MESSAGES, msg_id);
     ReleaseMutex(g_file_mutex);
 
-    /* 방 전체에 삭제 알림 */
-    broadcast_to_room(room_id,
-        make_packet("MSG_DELETED_NOTIFY|%d:%d", room_id, msg_id));
+    if (is_dm) {
+        /* DM: 두 당사자에게만 알림 — 다른 세션 노출 금지 */
+        ClientSession *peer = find_session_by_id(
+            is_self ? m->to_id : m->from_id);
+        if (peer)
+            send_packet(peer->fd, "MSG_DELETED_NOTIFY|0:%d", msg_id);
+        send_packet(sess->fd, "MSG_DELETED_NOTIFY|0:%d", msg_id);
+    } else {
+        broadcast_to_room(room_id,
+            make_packet("MSG_DELETED_NOTIFY|%d:%d", room_id, msg_id));
+    }
 }
 ```
 
@@ -94,10 +117,18 @@ void handle_msg_delete(const char *user_id, int room_id, int msg_id,
 void handle_msg_edit(const char *user_id, int room_id, int msg_id,
                      const char *new_content, ClientSession *sess) {
     MessageRecord *m = find_message_by_id(msg_id);
-    if (!m) return;
+    if (!m || m->is_deleted) return;
+    if (m->room_id != room_id) return;
 
-    /* 본인 메시지만 수정 가능 */
-    if (strcmp(m->from_id, user_id) != 0) return;
+    /* 시스템 메시지 보호 — 누구도 수정 불가 (FR_M_message.md FR-M03 매트릭스) */
+    if (m->msg_type == MSG_TYPE_SYSTEM) return;
+
+    /* 본인 메시지만 — 방장도 타인 메시지 수정 불가 */
+    if (strcmp(m->from_id, user_id) != 0) {
+        send_packet(sess->fd,
+            "NOTIFY|SERVER:타인의 메시지는 수정할 수 없습니다.");
+        return;
+    }
 
     /* 5분(300초) 이내 검사 */
     time_t now      = time(NULL);
@@ -107,12 +138,20 @@ void handle_msg_edit(const char *user_id, int room_id, int msg_id,
         return;
     }
 
+    /* 입력 검증 */
+    if (has_forbidden_chars(new_content)) {
+        send_packet(sess->fd, "NOTIFY|SERVER:사용할 수 없는 문자가 포함되어 있습니다.");
+        return;
+    }
+
     /* 이모티콘 변환 후 수정 내용 저장 */
     char converted[501];
     strncpy(converted, new_content, 500);
+    converted[500] = '\0';
     convert_emoticons(converted, sizeof(converted));
 
     strncpy(m->content, converted, 500);
+    m->content[500] = '\0';
     get_current_timestamp(m->edited_at);
 
     WaitForSingleObject(g_file_mutex, INFINITE);
@@ -120,17 +159,73 @@ void handle_msg_edit(const char *user_id, int room_id, int msg_id,
                            converted, m->edited_at);
     ReleaseMutex(g_file_mutex);
 
-    /* "(수정됨)" 접미사 붙여 브로드캐스트 */
-    char display[512];
-    snprintf(display, sizeof(display), "%s (수정됨)", converted);
-    broadcast_to_room(room_id,
-        make_packet("MSG_EDITED_NOTIFY|%d:%d:%s", room_id, msg_id, display));
+    /* "(수정됨)" 접미사는 클라이언트 표시 단계에서 붙임 — 서버는 raw content만 송신
+       (수신 측에서 m.edited_at[0] != '\0' 검사로 (수정됨) 표시) */
+    if (room_id == 0) {
+        /* DM 수정: 두 당사자에게만 알림 */
+        ClientSession *peer = find_session_by_id(m->to_id);
+        if (peer)
+            send_packet(peer->fd, "MSG_EDITED_NOTIFY|0:%d:%s",
+                        msg_id, converted);
+        send_packet(sess->fd, "MSG_EDITED_NOTIFY|0:%d:%s",
+                    msg_id, converted);
+    } else {
+        broadcast_to_room(room_id,
+            make_packet("MSG_EDITED_NOTIFY|%d:%d:%s",
+                        room_id, msg_id, converted));
+    }
 }
 ```
 
 ---
 
-## 5. 이모티콘 변환 테이블
+## 5. handle_whisper 상세 (FR-M01)
+
+귓속말은 닉네임 기반으로 대상 세션을 검색해 단건 전달한다. 차단 검사는 DM과 동일한 정책 (피수신자 측에서 차단했으면 무수신).
+
+```c
+void handle_whisper(const char *from_nick, const char *to_nick,
+                    const char *content, ClientSession *sess) {
+    /* 1. 닉네임으로 수신자 세션 찾기 (닉네임은 unique) */
+    ClientSession *to_sess = find_session_by_nick(to_nick);
+    if (!to_sess) {
+        send_packet(sess->fd,
+            "NOTIFY|SERVER:%s 님은 현재 오프라인입니다.", to_nick);
+        return;
+    }
+
+    /* 2. 자기 자신 검사 */
+    if (strcmp(sess->user_id, to_sess->user_id) == 0) {
+        send_packet(sess->fd, "NOTIFY|SERVER:자기 자신에게 귓속말할 수 없습니다.");
+        return;
+    }
+
+    /* 3. 차단 검사 (FR_F_friend.md 차단 매트릭스):
+          target이 sender를 차단했으면 조용히 무시 (차단 노출 방지) */
+    if (is_blocked_by(to_sess->user_id, sess->user_id)) {
+        return;
+    }
+
+    /* 4. 이모티콘 변환 */
+    char converted[501];
+    strncpy(converted, content, 500);
+    converted[500] = '\0';
+    convert_emoticons(converted, sizeof(converted));
+
+    /* 5. 타임스탬프 + 전송 */
+    char ts[20];
+    get_current_timestamp(ts);
+    send_packet(to_sess->fd, "WHISPER_RECV|%s:%s:%s",
+                from_nick, ts, converted);
+
+    /* 6. messages.txt 저장은 정책상 선택 (FR-M01 노트: 저장 선택사항)
+          저장하면 msg_type=2로 to_id 채워서 기록 */
+}
+```
+
+---
+
+## 6. 이모티콘 변환 테이블
 
 ```c
 static const struct { const char *from; const char *to; } EMOTICON_TABLE[] = {
@@ -168,7 +263,7 @@ void convert_emoticons(char *content, int max_len) {
 
 ---
 
-## 6. /me 액션 메시지 처리
+## 7. /me 액션 메시지 처리
 
 ```c
 /* 입력: "/me 손을 흔든다"
@@ -189,7 +284,7 @@ int parse_me_action(const char *content, char *out, int out_len) {
 
 ---
 
-## 7. 시스템 메시지 (msg_type=1)
+## 8. 시스템 메시지 (msg_type=1)
 
 입/퇴장, 초대, 강퇴, 공지 등 이벤트 발생 시 시스템 메시지를 방 전체에 브로드캐스트한다.
 
@@ -212,7 +307,7 @@ void broadcast_system_msg(int room_id, const char *text) {
 
 ---
 
-## 8. 메시지 검색
+## 9. 메시지 검색
 
 ```c
 void handle_msg_search(int room_id, const char *keyword,
@@ -228,14 +323,18 @@ void handle_msg_search(int room_id, const char *keyword,
             results[found++] = *m;
     }
 
-    /* MSG_SEARCH_RES|<count>:<msg_id>:<from_nick>:<timestamp>:<content>;... */
+    /* MSG_SEARCH_RES|<count>:<msg_id>:<from_nick>:<timestamp>:<content>;...
+       오픈채팅 시 from_nick은 open_nick 우선 (module_room.md resolve_display_nick) */
+    RoomInfo *r = find_room_by_id(room_id);
+    int is_open = (r && r->is_open) ? 1 : 0;
+
     char buf[MAX_BUF_SIZE];
     int  off = 0;
     off += snprintf(buf + off, sizeof(buf) - off,
                     "MSG_SEARCH_RES|%d", found);
     for (int i = 0; i < found; i++) {
-        char nick[21] = {0};
-        get_nickname(results[i].from_id, nick);
+        const char *nick = resolve_display_nick(room_id,
+                                                results[i].from_id, is_open);
         off += snprintf(buf + off, sizeof(buf) - off,
                         ":%d:%s:%s:%s",
                         results[i].id, nick,
@@ -251,7 +350,7 @@ void handle_msg_search(int room_id, const char *keyword,
 
 ---
 
-## 9. msg_type 코드표
+## 10. msg_type 코드표
 
 | 값 | 의미 | 클라이언트 표시 |
 |----|------|----------------|

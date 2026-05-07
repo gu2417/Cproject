@@ -33,11 +33,13 @@ TCP Server-Client · 멀티스레드 · **콘솔 UI** · **텍스트 파일 영�
 |------|------|------|
 | `overview/` | `project_summary.md` | 프로젝트 개요, 범위, 기술 결정 근거 |
 | | `system_architecture.md` | 전체 시스템 아키텍처 다이어그램 |
-| `architecture/` | `server_architecture.md` | 서버 모듈 구조 및 스레드 모델 |
+| | `requirements_traceability.md` | requirements.md ↔ docs 추적성 매트릭스 |
+| `architecture/` | `server_architecture.md` | 서버 모듈 구조, 스레드 모델, router 디스패치 |
 | | `client_architecture.md` | 클라이언트 모듈 구조 |
+| | `module_common.md` | 공통 모듈 (`protocol.h`, `types.h`, `utils.c/h`) |
 | | `module_auth.md` | 인증 모듈 (로그인/회원가입) |
 | | `module_friend.md` | 친구 관리 모듈 |
-| | `module_room.md` | 채팅방 모듈 |
+| | `module_room.md` | 채팅방 모듈 (히스토리 open_nick 포함) |
 | | `module_dm.md` | DM 모듈 |
 | | `module_message.md` | 메시지 처리 모듈 |
 | | `module_broadcast.md` | 브로드캐스트 모듈 |
@@ -60,8 +62,8 @@ TCP Server-Client · 멀티스레드 · **콘솔 UI** · **텍스트 파일 영�
 | `security/` | `security_overview.md` | 위협 모델 및 보안 대책 목록 |
 | | `password_hashing.md` | SHA-256 WinCrypt 구현 코드 |
 | | `input_validation.md` | 금지문자 검증, 버퍼 안전, 스레드 안전 |
-| `database/` | `file_schema.md` | 8개 txt 파일 스키마 및 포맷 규칙 |
-| | `in_memory_structures.md` | 서버 인메모리 구조체 (C 코드) |
+| `database/` | `file_schema.md` | 9개 txt 파일 스키마 (room_reads.txt 포함) 및 포맷 규칙 |
+| | `in_memory_structures.md` | 서버 인메모리 구조체·전역변수·Mutex (C 코드) |
 
 ### 추가 문서
 
@@ -95,9 +97,10 @@ rooms.txt          채팅방 정보 (이름, 주제, 방장, 공지 등)
 messages.txt       메시지 히스토리 (DM 포함, room_id=0 이면 DM)
 friends.txt        친구 관계 (pending/accepted/blocked)
 room_members.txt   채팅방 멤버 (오픈닉, 관리자 여부, 알림 무음)
-dm_reads.txt       DM 읽음 상태
+dm_reads.txt       DM 읽음 상태 (메시지 단위)
 room_invites.txt   오프라인 초대 대기 목록
-user_settings.txt  색상·테마·타임스탬프·DND 설정
+user_settings.txt  색상·테마·타임스탬프·DND·welcome_shown 설정
+room_reads.txt     그룹/오픈채팅 읽음 상태 (사용자별 last_read_msg_id) — FR-D05·FR-G09
 ```
 
 ---

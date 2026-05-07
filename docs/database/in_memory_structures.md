@@ -4,12 +4,18 @@
 
 ```c
 /* config.h */
-#define MAX_CLIENTS       256    /* 최대 동시 접속 세션 */
-#define MAX_ROOMS         100    /* 최대 채팅방 수 */
-#define MAX_ROOM_MEMBERS   64    /* 방당 최대 멤버 수 */
-#define DEFAULT_PORT    55555    /* 기본 포트 번호 */
-#define MAX_MSG_HISTORY  1000    /* 인메모리 최근 메시지 캐시 수 */
-#define MAX_BUF_SIZE    10240    /* 최대 패킷 버퍼 크기 (bytes) */
+#define MAX_CLIENTS              256   /* 최대 동시 접속 세션 (NFR-01) */
+#define MAX_ROOMS                100   /* 최대 채팅방 수 */
+#define MAX_ROOM_MEMBERS          64   /* 방당 최대 멤버 수 (FR-G01) */
+#define MAX_USERS               1000   /* 가입 유저 인메모리 캐시 한도 */
+#define MAX_FRIENDS             5000   /* 친구 관계 인메모리 한도 (1000명 × 5명 평균) */
+#define MAX_MSG_HISTORY         1000   /* 인메모리 최근 메시지 캐시 수 */
+#define MAX_ROOM_MEMBER_RECORDS 6400   /* MAX_ROOMS × MAX_ROOM_MEMBERS */
+#define MAX_DM_READS           10000   /* DM 읽음 기록 캐시 한도 */
+#define MAX_INVITES             1000   /* 오프라인 초대 대기 한도 */
+#define MAX_ROOM_READS          6400   /* room_reads 캐시 한도 (MAX_USERS × 평균 참여방) */
+#define MAX_BUF_SIZE           10240   /* 최대 패킷 버퍼 크기 (bytes) */
+#define DEFAULT_PORT           55555   /* 기본 포트 번호 */
 
 /* 데이터 파일 경로 */
 #define FILE_USERS         "data/users.txt"
@@ -20,6 +26,7 @@
 #define FILE_DM_READS      "data/dm_reads.txt"
 #define FILE_ROOM_INVITES  "data/room_invites.txt"
 #define FILE_USER_SETTINGS "data/user_settings.txt"
+#define FILE_ROOM_READS    "data/room_reads.txt"
 ```
 
 ---
@@ -163,12 +170,37 @@ typedef struct {
     char  theme[11];
     int   ts_format;       /* 0=HH:MM, 1=HH:MM:SS, 2=MM-DD HH:MM */
     int   dnd;
+    int   welcome_shown;   /* 첫 로그인 가이드 표시 여부 (0/1) */
 } UserSettingsRecord;
+
+/* 그룹 채팅방 읽음 기록 — FR-D05·FR-G09 안읽음 카운트 산출용 */
+typedef struct {
+    int   room_id;
+    char  user_id[21];
+    int   last_read_msg_id;  /* 사용자가 마지막으로 읽은 messages.txt 의 msg_id */
+    char  read_at[20];       /* YYYY-MM-DD HH:MM:SS */
+} RoomReadRecord;
+
+/* rooms.txt 파일 직렬화용 평탄 구조체 (RoomInfo와 다른 점: member_ids/admin_flags 미포함 — 멤버는 room_members.txt가 source-of-truth) */
+typedef struct {
+    int   id;
+    char  name[31];
+    char  topic[101];
+    char  pw_hash[65];
+    int   max_users;
+    char  owner_id[21];
+    char  notice[256];
+    int   is_open;          /* 0=그룹채팅, 1=오픈채팅 */
+    int   pinned_msg_id;
+    char  created_at[20];
+} RoomRecord;
 ```
 
 ---
 
 ## 6. 전역 변수 선언 (globals.h / globals.c)
+
+서버는 모든 영속 데이터를 시작 시 파일에서 로드하여 인메모리 배열로 캐시하고, 변경 시 배열 갱신 + 파일 동기화를 동시에 수행한다. 모든 전역은 `g_` 접두사를 사용하며, 접근은 §7의 mutex 패턴을 따른다.
 
 ```c
 /* globals.h */
@@ -179,30 +211,107 @@ typedef struct {
 #include <Windows.h>
 #include "config.h"
 
-extern ClientSession   g_sessions[MAX_CLIENTS];
-extern RoomInfo        g_rooms[MAX_ROOMS];
-extern HANDLE          g_sessions_mutex;
-extern HANDLE          g_file_mutex;
-extern int             g_client_count;
-extern int             g_room_count;
-extern int             g_next_room_id;
-extern int             g_next_msg_id;
+/* === 세션·방 (RAM only, mutex: g_sessions_mutex) === */
+extern ClientSession      g_sessions[MAX_CLIENTS];
+extern RoomInfo           g_rooms[MAX_ROOMS];          /* in-memory 활성 방 캐시 */
+extern int                g_client_count;
+extern int                g_room_count;
+
+/* === 파일 영속 캐시 (mutex: g_file_mutex 쓰기 시) === */
+extern UserRecord         g_users[MAX_USERS];
+extern int                g_user_count;
+extern FriendRecord       g_friends[MAX_FRIENDS];
+extern int                g_friend_count;
+extern MessageRecord      g_messages[MAX_MSG_HISTORY];
+extern int                g_msg_count;
+extern RoomMemberRecord   g_room_members[MAX_ROOM_MEMBER_RECORDS];
+extern int                g_room_member_count;
+extern DmReadRecord       g_dm_reads[MAX_DM_READS];
+extern int                g_dm_read_count;
+extern RoomInviteRecord   g_room_invites[MAX_INVITES];
+extern int                g_room_invite_count;
+extern UserSettingsRecord g_user_settings[MAX_USERS];
+extern int                g_user_settings_count;
+extern RoomReadRecord     g_room_reads[MAX_ROOM_READS];
+extern int                g_room_read_count;
+
+/* === 단조 증가 ID (파일 로드 후 max+1로 복원) === */
+extern int                g_next_room_id;
+extern int                g_next_msg_id;
+extern int                g_next_friend_id;
+extern int                g_next_invite_id;
+
+/* === Mutex 핸들 === */
+extern HANDLE             g_sessions_mutex;   /* g_sessions, g_rooms, g_client_count */
+extern HANDLE             g_file_mutex;       /* 모든 txt 파일 쓰기 + 파일 영속 캐시 변경 */
+extern HANDLE             g_console_mutex;    /* RecvMsg ↔ 메인 스레드 콘솔 출력 충돌 방지 */
 
 #endif /* GLOBALS_H */
 ```
 
 ```c
-/* globals.c */
+/* globals.c — 모든 전역 정의(소유자) */
 #include "globals.h"
 
-ClientSession g_sessions[MAX_CLIENTS];
-RoomInfo      g_rooms[MAX_ROOMS];
-HANDLE        g_sessions_mutex = NULL;
-HANDLE        g_file_mutex     = NULL;
-int           g_client_count   = 0;
-int           g_room_count     = 0;
-int           g_next_room_id   = 1;   /* 다음 방 ID (파일 로드 후 갱신) */
-int           g_next_msg_id    = 1;   /* 다음 메시지 ID (파일 로드 후 갱신) */
+ClientSession      g_sessions[MAX_CLIENTS];
+RoomInfo           g_rooms[MAX_ROOMS];
+int                g_client_count        = 0;
+int                g_room_count          = 0;
+
+UserRecord         g_users[MAX_USERS];
+int                g_user_count          = 0;
+FriendRecord       g_friends[MAX_FRIENDS];
+int                g_friend_count        = 0;
+MessageRecord      g_messages[MAX_MSG_HISTORY];
+int                g_msg_count           = 0;
+RoomMemberRecord   g_room_members[MAX_ROOM_MEMBER_RECORDS];
+int                g_room_member_count   = 0;
+DmReadRecord       g_dm_reads[MAX_DM_READS];
+int                g_dm_read_count       = 0;
+RoomInviteRecord   g_room_invites[MAX_INVITES];
+int                g_room_invite_count   = 0;
+UserSettingsRecord g_user_settings[MAX_USERS];
+int                g_user_settings_count = 0;
+RoomReadRecord     g_room_reads[MAX_ROOM_READS];
+int                g_room_read_count     = 0;
+
+int                g_next_room_id        = 1;
+int                g_next_msg_id         = 1;
+int                g_next_friend_id      = 1;
+int                g_next_invite_id      = 1;
+
+HANDLE             g_sessions_mutex      = NULL;
+HANDLE             g_file_mutex          = NULL;
+HANDLE             g_console_mutex       = NULL;
+```
+
+### 6-1. 단조 증가 ID 복원
+
+서버 시작 시 `load_*` 호출 후 다음 ID 카운터를 max+1로 복원해야 재시작 후 ID 충돌을 막는다.
+
+```c
+/* main.c — 파일 로드 직후 호출 */
+void restore_next_ids(void) {
+    g_next_room_id = 1;
+    for (int i = 0; i < g_room_count; i++)
+        if (g_rooms[i].id >= g_next_room_id)
+            g_next_room_id = g_rooms[i].id + 1;
+
+    g_next_msg_id = 1;
+    for (int i = 0; i < g_msg_count; i++)
+        if (g_messages[i].id >= g_next_msg_id)
+            g_next_msg_id = g_messages[i].id + 1;
+
+    g_next_friend_id = 1;
+    for (int i = 0; i < g_friend_count; i++)
+        if (g_friends[i].id >= g_next_friend_id)
+            g_next_friend_id = g_friends[i].id + 1;
+
+    g_next_invite_id = 1;
+    for (int i = 0; i < g_room_invite_count; i++)
+        if (g_room_invites[i].id >= g_next_invite_id)
+            g_next_invite_id = g_room_invites[i].id + 1;
+}
 ```
 
 ---
@@ -213,7 +322,8 @@ int           g_next_msg_id    = 1;   /* 다음 메시지 ID (파일 로드 후 
 /* main.c — 서버 시작 시 */
 g_sessions_mutex = CreateMutex(NULL, FALSE, NULL);
 g_file_mutex     = CreateMutex(NULL, FALSE, NULL);
-if (!g_sessions_mutex || !g_file_mutex) {
+g_console_mutex  = CreateMutex(NULL, FALSE, NULL);
+if (!g_sessions_mutex || !g_file_mutex || !g_console_mutex) {
     fprintf(stderr, "CreateMutex() failed\n");
     exit(1);
 }

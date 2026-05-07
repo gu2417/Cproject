@@ -139,16 +139,27 @@ void update_message_content(const char *path, int msg_id,
 | 필드 | 타입 | 설명 |
 |------|------|------|
 | id | 정수 | 레코드 고유 ID |
-| user_id | 문자열 (최대 20자) | 요청 발신자 ID |
+| user_id | 문자열 (최대 20자) | 요청 발신자 ID (방향성 있음) |
 | friend_id | 문자열 (최대 20자) | 요청 수신자 ID |
-| status | 정수 | 0=pending, 1=accepted, 2=blocked |
+| status | 정수 | 친구 관계 상태 (아래 표 참조) |
 | created_at | 문자열 | `YYYY-MM-DD HH:MM:SS` |
+
+### status 값 정의
+
+| status | 의미 | 발생 시점 | 효과 |
+|--------|------|-----------|------|
+| `0` | pending (요청 보냄) | `FRIEND_ADD_REQ` 처리 시 신규 레코드 추가 | 수신자가 수락/거절 전까지 대기 |
+| `1` | accepted (친구 수락) | `FRIEND_ACCEPT` 처리 시 status 0→1 갱신 | 친구 목록·DM·온라인 상태 알림 활성 |
+| `2` | blocked (차단) | `FRIEND_BLOCK` 처리 시 status →2 (기존 관계 무관) | FR-F05: 메시지·DM·친구요청 차단 |
+
+> **거절(`FRIEND_REJECT`)**: 레코드를 `status=0`에 머무르게 두지 않고 **즉시 삭제**한다 (전체 재작성).  
+> **삭제(`FRIEND_DELETE`)**: 양방향 레코드 전체 삭제. status=2(blocked) 차단 해제는 `FRIEND_DELETE`로 통일 — `status=0`(pending)은 차단 해제 후 재요청부터 다시 시작한다는 정책상 의미가 없으므로 사용하지 않는다.
 
 ### 예시
 ```
-1//alice//bob//1//2026-04-15 09:00:00
-2//alice//charlie//0//2026-05-07 10:00:00
-3//dave//alice//2//2026-04-20 15:00:00
+1//alice//bob//1//2026-04-15 09:00:00     # alice ↔ bob 친구 (수락 완료)
+2//alice//charlie//0//2026-05-07 10:00:00 # alice → charlie 친구 요청 대기
+3//dave//alice//2//2026-04-20 15:00:00    # dave가 alice를 차단
 ```
 
 ### 로드/저장 함수 시그니처
@@ -267,7 +278,7 @@ void update_invite_status(const char *path, RoomInviteRecord *list,
 
 ### 포맷
 ```
-<user_id>//<msg_color>//<nick_color>//<theme>//<ts_format>//<dnd>
+<user_id>//<msg_color>//<nick_color>//<theme>//<ts_format>//<dnd>//<welcome_shown>
 ```
 
 ### 필드 정의
@@ -280,12 +291,15 @@ void update_invite_status(const char *path, RoomInviteRecord *list,
 | theme | 문자열 (최대 10자) | dark 또는 light |
 | ts_format | 정수 | 0=HH:MM, 1=HH:MM:SS, 2=MM-DD HH:MM |
 | dnd | 정수 | 0=알림 켜짐, 1=방해금지 모드 |
+| welcome_shown | 정수 | 첫 로그인 환영 안내 표시 완료 여부 (0=미표시, 1=표시 완료) |
+
+> `welcome_shown` 필드는 `help_and_guides.md §5` (초기 사용자 가이드) 표시 1회 정책에 사용된다. 회원가입 직후 처음 로그인 시 0으로 시작 → 가이드 표시 후 1로 갱신.
 
 ### 예시
 ```
-alice//cyan//yellow//dark//0//0
-bob//white//green//light//1//0
-charlie//magenta//cyan//dark//2//1
+alice//cyan//yellow//dark//0//0//1
+bob//white//green//light//1//0//1
+charlie//magenta//cyan//dark//2//1//0
 ```
 
 ### 로드/저장 함수 시그니처
@@ -299,7 +313,75 @@ int  get_user_settings(UserSettingsRecord *list, int count,
 
 ---
 
-## 9. 파일 없을 때 처리
+## 9. room_reads.txt — 그룹/오픈채팅방 읽음 상태 (FR-D05·FR-G09)
+
+`dm_reads.txt`가 1:1 DM 메시지 단위 읽음 기록인 것과 달리, 그룹/오픈채팅방은 **사용자별 마지막으로 읽은 msg_id만 저장**한다. 매 메시지마다 읽음 레코드를 쌓으면 수만 건 단위로 폭증하므로 (room_id, user_id) 페어당 1건만 유지한다.
+
+### 포맷
+```
+<room_id>//<user_id>//<last_read_msg_id>//<read_at>
+```
+
+### 필드 정의
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| room_id | 정수 | 채팅방 ID |
+| user_id | 문자열 (최대 20자) | 사용자 ID |
+| last_read_msg_id | 정수 | 사용자가 마지막으로 읽은 messages.txt 의 msg_id |
+| read_at | 문자열 | `YYYY-MM-DD HH:MM:SS` |
+
+### 안읽음 카운트 산출
+
+```c
+/* (room_id, user_id) 페어의 안읽음 메시지 수 */
+int get_unread_room_count(int room_id, const char *user_id) {
+    int last_read = 0;
+    for (int i = 0; i < g_room_read_count; i++) {
+        if (g_room_reads[i].room_id == room_id &&
+            strcmp(g_room_reads[i].user_id, user_id) == 0) {
+            last_read = g_room_reads[i].last_read_msg_id;
+            break;
+        }
+    }
+    int unread = 0;
+    for (int i = 0; i < g_msg_count; i++) {
+        if (g_messages[i].room_id == room_id &&
+            g_messages[i].id > last_read &&
+            !g_messages[i].is_deleted) {
+            unread++;
+        }
+    }
+    return unread;
+}
+```
+
+### 갱신 시점
+- `ROOM_JOIN_RES`(P0) 응답 직후 — 입장과 동시에 마지막 메시지까지 읽음 처리.
+- `ROOM_MSG_RECV`(P0) 수신 시 — 사용자가 현재 보고 있는 방이면 즉시 갱신.
+- `ROOM_LEAVE`(P0) 처리 시 — 마지막 본 시점 보존.
+
+### 예시
+```
+1//alice//42//2026-05-07 10:30:00
+1//bob//40//2026-05-07 10:25:00
+2//charlie//100//2026-05-07 11:00:00
+```
+
+### 로드/저장 함수 시그니처
+```c
+int  load_room_reads(const char *path, RoomReadRecord *out, int max_count);
+int  upsert_room_read(const char *path, RoomReadRecord *list,
+                      int *count, int room_id, const char *user_id,
+                      int last_read_msg_id);
+int  get_unread_room_count(int room_id, const char *user_id);
+```
+
+> 표시 상한: 클라이언트는 99개 초과 시 `[안읽음 99+]` 으로 캡한다 (콘솔 폭 제한).
+
+---
+
+## 10. 파일 없을 때 처리
 
 서버 시작 시 데이터 파일이 존재하지 않아도 정상 동작해야 한다.
 

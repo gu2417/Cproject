@@ -48,6 +48,37 @@ S→C  ROOM_INVITE_RES|0   (SENT)
 - 대상이 온라인: `ROOM_INVITE_NOTIFY` 즉시 전송
 - 대상이 오프라인: `room_invites.txt`에 pending 저장 → 로그인 시 알림
 
+### 다중 초대 처리
+
+`dialogs_and_actions.md` §11에서 친구 다수를 쉼표로 구분 입력 가능하지만 (`> 선택: 1,3,5`), `ROOM_INVITE` 패킷은 단건 전용이다 (`<target_id>` 한 명).
+
+**처리 방식**: 클라이언트가 선택된 ID 수만큼 `ROOM_INVITE` 패킷을 **반복 전송**한다. 서버는 패킷별로 독립 처리하며 응답은 결과 코드별로 누적한다.
+
+```c
+/* menu_chat.c — 다중 초대 명령 처리 */
+void cmd_invite_multi(int room_id, const char *id_list_csv) {
+    char buf[256];
+    safe_strcpy(buf, id_list_csv, sizeof(buf));
+
+    int sent = 0, fail = 0;
+    char *tok = strtok(buf, ",");
+    while (tok) {
+        trim(tok);
+        if (tok[0] != '\0') {
+            send_packet(g_state.sock, "ROOM_INVITE|%d:%s", room_id, tok);
+            /* RecvMsg 스레드가 ROOM_INVITE_RES 수신 시 카운트 */
+            sent++;
+        }
+        tok = strtok(NULL, ",");
+    }
+    printf("> 초대 요청 %d건 전송. 결과는 알림으로 표시됩니다.\n", sent);
+}
+```
+
+서버는 한 트랜잭션에서 여러 초대를 받더라도 각각 `ROOM_FULL` 검사를 다시 수행한다 (마지막 한 자리에 동시에 초대된 경우 첫 처리만 SENT, 나머지 ROOM_FULL 반환).
+
+> 패킷 자체를 다중화하지 않은 이유: `target_id`가 자유 텍스트가 아니므로 `;` 리스트 구분이 가능하지만, 응답 코드가 대상별로 다를 수 있어 단건 응답이 단순함. 또한 `MAX_PKT_SIZE=10240` 제약 내에서 친구 5명 초대도 5번의 작은 패킷이 효율적.
+
 ---
 
 ## FR-G03 — 메시지 전송 및 브로드캐스트

@@ -57,18 +57,38 @@ void handle_friend_add(const char *from_id, const char *target_id,
         return;
     }
 
-    /* 2. 이미 친구 또는 차단 여부 확인 */
-    FriendRecord *existing = find_friend_record(from_id, target_id);
-    if (existing) {
-        if (existing->status == 2) {
-            send_packet(sess->fd, "FRIEND_ADD_RES|2");  /* BLOCKED */
-        } else {
-            send_packet(sess->fd, "FRIEND_ADD_RES|3");  /* ALREADY_FRIEND */
-        }
+    /* 2. 자기 자신에게 친구 요청 금지 */
+    if (strcmp(from_id, target_id) == 0) {
+        send_packet(sess->fd, "FRIEND_ADD_RES|1");  /* NOT_FOUND 위장 */
         return;
     }
 
-    /* 3. friends.txt에 pending 레코드 추가 */
+    /* 3. 차단 검사 — 양방향 분리 (FR_F_friend.md 차단 매트릭스)
+       3-a. target이 from을 차단했는가? (TGT→BLK 방향) → BLOCKED
+            (피차단자가 차단자에게 친구요청 보낼 수 없음) */
+    if (is_blocked_by(target_id, from_id)) {
+        send_packet(sess->fd, "FRIEND_ADD_RES|2");  /* BLOCKED */
+        return;
+    }
+
+    /* 3-b. from이 target을 차단한 상태에서 친구요청 시도 → BLOCKED
+            (자기 차단 목록에 있는 사람에게 요청 불가 — 먼저 차단 해제 필요) */
+    FriendRecord *self_to_target = find_friend_record(from_id, target_id);
+    if (self_to_target && self_to_target->status == 2) {
+        send_packet(sess->fd, "FRIEND_ADD_RES|2");  /* BLOCKED */
+        return;
+    }
+
+    /* 4. 이미 친구/요청 대기 중인지 검사 (양방향 accepted/pending 모두 차단) */
+    FriendRecord *forward  = find_friend_record(from_id, target_id);
+    FriendRecord *backward = find_friend_record(target_id, from_id);
+    if ((forward  && (forward->status  == 0 || forward->status  == 1)) ||
+        (backward && (backward->status == 0 || backward->status == 1))) {
+        send_packet(sess->fd, "FRIEND_ADD_RES|3");  /* ALREADY_FRIEND */
+        return;
+    }
+
+    /* 5. friends.txt에 pending 레코드 추가 */
     FriendRecord fr = {0};
     fr.id = g_next_friend_id++;
     strncpy(fr.user_id,   from_id,   20);
@@ -82,10 +102,10 @@ void handle_friend_add(const char *from_id, const char *target_id,
 
     add_friend_to_cache(&fr);
 
-    /* 4. 요청 송신자에게 SENT 응답 */
+    /* 6. 요청 송신자에게 SENT 응답 */
     send_packet(sess->fd, "FRIEND_ADD_RES|0");  /* SENT */
 
-    /* 5. 대상이 온라인이면 실시간 알림 */
+    /* 7. 대상이 온라인이면 실시간 알림 */
     ClientSession *target_sess = find_session_by_id(target_id);
     if (target_sess) {
         char from_nick[21] = {0};
@@ -93,6 +113,19 @@ void handle_friend_add(const char *from_id, const char *target_id,
         send_packet(target_sess->fd,
                     "FRIEND_REQUEST_NOTIFY|%s:%s", from_id, from_nick);
     }
+}
+
+/* 차단 검사 헬퍼 — receiver가 sender를 차단했는지 */
+int is_blocked_by(const char *receiver_id, const char *sender_id) {
+    for (int i = 0; i < g_friend_count; i++) {
+        FriendRecord *fr = &g_friends[i];
+        if (strcmp(fr->user_id,   receiver_id) == 0 &&
+            strcmp(fr->friend_id, sender_id)   == 0 &&
+            fr->status == 2) {
+            return 1;
+        }
+    }
+    return 0;
 }
 ```
 

@@ -13,7 +13,7 @@ requirements.md 섹션9 기반, 콘솔 + 텍스트 파일 환경 반영.
 | NFR-03 | 안정성 | 클라이언트 비정상 종료 시 서버 크래시 없음 | `recv()` 0/음수 반환 시 `leftClient()` 호출, 소켓 닫기 | [ ] |
 | NFR-04 | 보안 | SHA-256 해시 저장, gets() 사용 금지 | WinCrypt API (`CALG_SHA_256`), `fgets()`/`scanf("%Ns")` 사용 | [ ] |
 | NFR-05 | 경량성 | 서버 메모리 100MB 이하 | 인메모리 구조체 크기 계산 (아래 참조) | [ ] |
-| NFR-06 | 이식성 | Windows 단일 빌드 | WinSock2, `_beginthreadex`, `CreateMutex` — Linux/Mac 불필요 | [ ] |
+| NFR-06 | 이식성 | Windows 단일 빌드 | WinSock2, `_beginthreadex`, `CreateMutex` — Linux/Mac 불필요. **requirements.md의 "GTK4 4.0+ 필요" 의존성은 콘솔 UI 결정에 따라 제거** (project_summary.md 참조) | [ ] |
 | NFR-07 | 확장성 | 서버/클라이언트 분리 | 모듈화 파일 구조 (auth/room/friend/dm/message 분리) | [ ] |
 | NFR-08 | 영속성 | 재시작 후 데이터 유지 | txt 파일 저장, 서버 시작 시 전체 로드 | [ ] |
 | NFR-09 | 스레드 안전 | 공유 자원 경쟁 없음 | `CreateMutex`/`WaitForSingleObject`/`ReleaseMutex` | [ ] |
@@ -178,16 +178,26 @@ MAX_ROOMS = 100:
 서버 재시작 후 `g_next_room_id`, `g_next_msg_id` 복원:
 
 ```c
-/* 서버 시작 시 파일 로드 완료 후 */
+/* 서버 시작 시 파일 로드 완료 후 — restore_next_ids() */
 g_next_room_id = 1;
 for (int i = 0; i < g_room_count; i++)
-    if (g_rooms_data[i].id >= g_next_room_id)
-        g_next_room_id = g_rooms_data[i].id + 1;
+    if (g_rooms[i].id >= g_next_room_id)
+        g_next_room_id = g_rooms[i].id + 1;
 
 g_next_msg_id = 1;
 for (int i = 0; i < g_msg_count; i++)
     if (g_messages[i].id >= g_next_msg_id)
         g_next_msg_id = g_messages[i].id + 1;
+
+g_next_friend_id = 1;
+for (int i = 0; i < g_friend_count; i++)
+    if (g_friends[i].id >= g_next_friend_id)
+        g_next_friend_id = g_friends[i].id + 1;
+
+g_next_invite_id = 1;
+for (int i = 0; i < g_room_invite_count; i++)
+    if (g_room_invites[i].id >= g_next_invite_id)
+        g_next_invite_id = g_room_invites[i].id + 1;
 ```
 
 ---

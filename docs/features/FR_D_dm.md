@@ -36,12 +36,13 @@ else if (strcmp(type, "DM_RECV") == 0) {
     int   msg_id    = atoi(strtok(NULL, ":"));
     char *content   = strtok(NULL, "");  /* content-last */
 
-    if (g_state.current_dm_partner &&
+    if (g_state.current_dm_partner[0] != '\0' &&
         strcmp(g_state.current_dm_partner, from_id) == 0) {
-        /* 현재 해당 DM 화면에 있으면 즉시 출력 */
+        /* 현재 해당 DM 화면에 있으면 즉시 출력 + 자동 읽음 처리 */
         printf("[%s] %s: %s\n> ", timestamp, from_nick, content);
-        /* 읽음 처리 */
-        /* send_packet(g_state.sock, "DM_READ_ACK|%d", msg_id); */
+        /* 읽음 갱신은 DM 화면 진입 시 일괄 DM_HISTORY_REQ 응답 후
+           서버가 dm_reads.txt 에 기록 + 송신자에게 DM_READ_NOTIFY 송출.
+           클라이언트는 별도 ACK 패킷을 보내지 않는다. */
     } else if (!g_state.dnd) {
         /* 다른 화면에 있으면 알림 */
         printf("\n[DM] %s: %s\n> ", from_nick, content);
@@ -54,22 +55,27 @@ else if (strcmp(type, "DM_RECV") == 0) {
 
 ## FR-D03 — 읽음 확인
 
-DM 대화 화면 진입 시 또는 메시지 수신 시 `dm_reads.txt`에 읽음 기록을 추가한다.
+DM 읽음 갱신은 **서버 측에서 자동 처리**한다 (별도 클라이언트 ACK 패킷 없음).
 
+### 서버 트리거 조건
+1. **DM_HISTORY_REQ 처리 시**: 요청자가 `with_id`와의 미읽음 메시지를 수신함을 의미. 응답 직후 서버는 모든 해당 메시지에 대해 `dm_reads.txt`에 `(msg_id, requester_id, now)` append.
+2. **DM_RECV 송신 시 + 수신자가 현재 같은 DM 화면에 있는 경우**: 서버가 수신자의 `current_dm_partner` 상태를 직접 알 수 없으므로, 클라이언트가 DM 화면 진입 시 `DM_HISTORY_REQ`를 한 번 더 호출(또는 입장 신호 패킷)하여 읽음 갱신을 유도한다.
+
+### DM_READ_NOTIFY 송출
 ```
 S→C  DM_READ_NOTIFY|<reader_id>
 ```
+서버가 `dm_reads.txt`에 새 레코드를 추가한 직후, 해당 메시지의 **원래 송신자**가 온라인이면 `DM_READ_NOTIFY`를 송출한다.
 
-클라이언트 표시:
+### 클라이언트 표시
 ```
-[14:22] 홍길동: 오늘 시간 있으세요?      [읽음]
-[14:23] 홍길동: 언제 답장 주실 건가요?
+[14:22] 나: 오늘 시간 있으세요?           [읽음]
+[14:23] 나: 답장 부탁드려요               [안읽음]
 ```
 
-구현 방식:
-- 발신한 메시지 옆에 `[읽음]` 표시
-- `DM_READ_NOTIFY` 수신 시 해당 메시지에 `[읽음]` 갱신
-- 콘솔에서는 재출력 어려우므로 다음 메시지 출력 시 "이전 메시지 읽힘" 형태로 표시
+- 발신한 메시지 옆에 `[읽음]` / `[안읽음]` 표시 (DM_HISTORY_RES의 `<read>` 필드)
+- `DM_READ_NOTIFY` 수신 시 화면 하단에 "이전 메시지가 읽혔습니다" 안내 출력 (콘솔 한계로 기존 라인 in-place 갱신 어려움)
+- 송신자 자신의 메시지가 아닌, 본인이 수신한 메시지는 `[읽음]` 표시 대상이 아니다.
 
 ---
 

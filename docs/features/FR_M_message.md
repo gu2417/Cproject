@@ -26,7 +26,43 @@ C→S  MSG_DELETE|<room_id>:<msg_id>
 S→C  MSG_DELETED_NOTIFY|<room_id>:<msg_id>   (방 전체 브로드캐스트)
 ```
 
-- 본인 메시지 또는 방장/관리자만 삭제 가능
+### 권한 정책
+
+| 행위자 | 자기 메시지 | 타인 메시지 |
+|--------|-------------|-------------|
+| 일반 멤버 | ✅ 삭제 가능 | ❌ 삭제 불가 |
+| 공동 방장 (`is_admin=1`) | ✅ 삭제 가능 | ✅ 삭제 가능 (조정 권한) |
+| 방장 (`owner_id`) | ✅ 삭제 가능 | ✅ 삭제 가능 (조정 권한) |
+| DM 메시지 | ✅ 송신자만 | ❌ 수신자는 삭제 불가 |
+
+> 시간 제한 없음: 삭제는 언제든 가능 (수정과 다른 정책 — 메시지 회수는 보낸 직후가 아니라 사후 조정에도 의미가 있음).  
+> `is_deleted=1`로 표시만 변경 (물리 삭제 아님). 히스토리 로드 시 서버가 `[삭제된 메시지]`로 치환.
+
+```c
+void handle_msg_delete(int room_id, int msg_id, ClientSession *sess) {
+    MessageRecord *m = find_message_by_id(msg_id);
+    if (!m || m->is_deleted) return;
+    if (m->room_id != room_id) return;
+
+    /* 권한 검사 */
+    int is_self = strcmp(m->from_id, sess->user_id) == 0;
+    int is_dm   = m->room_id == 0;
+
+    if (is_dm) {
+        if (!is_self) return;  /* DM은 본인만 */
+    } else {
+        int is_mod = is_room_admin(room_id, sess->user_id);  /* 방장/공동방장 */
+        if (!is_self && !is_mod) return;
+    }
+
+    /* 삭제 처리 */
+    m->is_deleted = 1;
+    update_message_deleted(FILE_MESSAGES, msg_id);
+    broadcast_to_room(room_id,
+        "MSG_DELETED_NOTIFY|%d:%d", room_id, msg_id);
+}
+```
+
 - `messages.txt`에서 `is_deleted=1`로 변경 (물리 삭제 아님)
 - 클라이언트는 `MSG_DELETED_NOTIFY` 수신 시 해당 `msg_id` 메시지를 `[삭제된 메시지]`로 교체
 
@@ -52,17 +88,56 @@ C→S  MSG_EDIT|<room_id>:<msg_id>:<new_content>
 S→C  MSG_EDITED_NOTIFY|<room_id>:<msg_id>:<new_content>   (방 전체 브로드캐스트)
 ```
 
-- **5분(300초) 이내**만 수정 가능
-- 본인 메시지만 수정 가능
+### 권한 정책
+
+| 행위자 | 자기 메시지 (5분 이내) | 자기 메시지 (5분 초과) | 타인 메시지 |
+|--------|------------------------|------------------------|-------------|
+| 일반 멤버 | ✅ 수정 가능 | ❌ 시간 초과 | ❌ 수정 불가 |
+| 공동 방장 | ✅ 수정 가능 | ❌ 시간 초과 | ❌ **수정 불가** |
+| 방장 | ✅ 수정 가능 | ❌ 시간 초과 | ❌ **수정 불가** |
+| 시스템 메시지 (`msg_type=1`) | — | — | ❌ 누구도 수정 불가 |
+
+> **삭제와 다른 점**: 수정은 누구의 메시지든 본인만 5분 이내 가능 (방장도 타인 메시지 수정 불가). 메시지 내용을 다른 사람이 바꿀 수 있으면 발신자의 정확한 발언 기록이 훼손되기 때문.
+
+```c
+void handle_msg_edit(int room_id, int msg_id, const char *new_content,
+                     ClientSession *sess) {
+    MessageRecord *m = find_message_by_id(msg_id);
+    if (!m || m->is_deleted) return;
+    if (m->room_id != room_id) return;
+    if (m->msg_type == MSG_TYPE_SYSTEM) return;  /* 시스템 메시지 수정 불가 */
+
+    /* 본인 메시지만 */
+    if (strcmp(m->from_id, sess->user_id) != 0) {
+        send_packet(sess->fd, "NOTIFY|SERVER:타인의 메시지는 수정할 수 없습니다.");
+        return;
+    }
+
+    /* 5분 이내만 */
+    if (diff_minutes(m->created_at, current_ts()) > 5) {
+        send_packet(sess->fd, "NOTIFY|SERVER:수정 가능 시간(5분)이 초과되었습니다.");
+        return;
+    }
+
+    /* 금지문자/길이 검증 */
+    if (has_forbidden_char(new_content)) return;
+    if (validate_length(new_content, 1, 500) != 0) return;
+
+    /* 갱신 */
+    char now[20]; get_current_timestamp(now);
+    safe_strcpy(m->content, new_content, sizeof(m->content));
+    safe_strcpy(m->edited_at, now,        sizeof(m->edited_at));
+    update_message_content(FILE_MESSAGES, msg_id, new_content, now);
+
+    broadcast_to_room(room_id,
+        "MSG_EDITED_NOTIFY|%d:%d:%s", room_id, msg_id, new_content);
+}
+```
+
 - `messages.txt`에서 `content` 갱신, `edited_at` 설정
 - 클라이언트 표시: `내용 (수정됨)`
 
 콘솔 명령어: `/edit <msg_id> <새내용>`
-
-시간 초과 시 서버 응답:
-```
-NOTIFY|SERVER:수정 가능 시간(5분)이 초과되었습니다.
-```
 
 ---
 
