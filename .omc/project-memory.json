@@ -91,8 +91,8 @@
   "hotPaths": [
     {
       "path": "chat_program/src/server/room.c",
-      "accessCount": 34,
-      "lastAccessed": 1778246961891,
+      "accessCount": 38,
+      "lastAccessed": 1778252208827,
       "type": "file"
     },
     {
@@ -121,8 +121,8 @@
     },
     {
       "path": "chat_program/src/client/packet.c",
-      "accessCount": 18,
-      "lastAccessed": 1778246873242,
+      "accessCount": 19,
+      "lastAccessed": 1778252222479,
       "type": "file"
     },
     {
@@ -139,8 +139,8 @@
     },
     {
       "path": "chat_program/src/client/menu_main.c",
-      "accessCount": 13,
-      "lastAccessed": 1778244846676,
+      "accessCount": 15,
+      "lastAccessed": 1778252280790,
       "type": "file"
     },
     {
@@ -186,15 +186,15 @@
       "type": "file"
     },
     {
-      "path": "chat_program/src/client/menu_initial.c",
-      "accessCount": 5,
-      "lastAccessed": 1778243485389,
+      "path": "chat_program/src/server/main.c",
+      "accessCount": 6,
+      "lastAccessed": 1778251557589,
       "type": "file"
     },
     {
-      "path": "chat_program/src/server/main.c",
+      "path": "chat_program/src/client/menu_initial.c",
       "accessCount": 5,
-      "lastAccessed": 1778245597141,
+      "lastAccessed": 1778243485389,
       "type": "file"
     },
     {
@@ -270,6 +270,12 @@
       "type": "file"
     },
     {
+      "path": "chat_program/src/client/main.c",
+      "accessCount": 2,
+      "lastAccessed": 1778251565357,
+      "type": "file"
+    },
+    {
       "path": "docs/architecture/server_architecture.md",
       "accessCount": 1,
       "lastAccessed": 1778242158498,
@@ -291,12 +297,6 @@
       "path": "chat_program/src/client/state.c",
       "accessCount": 1,
       "lastAccessed": 1778242169055,
-      "type": "file"
-    },
-    {
-      "path": "chat_program/src/client/main.c",
-      "accessCount": 1,
-      "lastAccessed": 1778242169809,
       "type": "file"
     },
     {

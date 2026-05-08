@@ -109,10 +109,12 @@ void ShowRoomMenu(int is_open) {
             fflush(stdout);
             read_password(plain_pw, (int)sizeof(plain_pw));
 
-            g_state.response_received = 0;
-            if (plain_pw[0] != '\0') {
-                char pw_hash[65];
+            char pw_hash[65] = "";
+            if (plain_pw[0] != '\0')
                 sha256_hex(plain_pw, pw_hash);
+
+            g_state.response_received = 0;
+            if (pw_hash[0] != '\0') {
                 send_packet(g_state.sock, "%s|%s:%d:%d:%s",
                             ROOM_CREATE, name, max_users, is_open, pw_hash);
             } else {
@@ -121,11 +123,14 @@ void ShowRoomMenu(int is_open) {
             }
             wait_response(5000);
 
-            /* 생성 성공 시 자동 입장 */
+            /* 생성 성공 시 자동 입장 — 비밀번호 있으면 함께 전송 */
             if (g_last_code == ROOM_CREATE_OK && g_last_room_id > 0) {
                 int new_id = g_last_room_id;
                 g_state.response_received = 0;
-                send_packet(g_state.sock, "%s|%d", ROOM_JOIN, new_id);
+                if (pw_hash[0] != '\0')
+                    send_packet(g_state.sock, "%s|%d:%s", ROOM_JOIN, new_id, pw_hash);
+                else
+                    send_packet(g_state.sock, "%s|%d", ROOM_JOIN, new_id);
                 wait_response(5000);
                 if (g_last_code == ROOM_JOIN_OK &&
                     g_state.current_room_id == new_id) {

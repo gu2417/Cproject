@@ -288,7 +288,7 @@ static void handle_room_leave(ClientSession *sess, char *payload) {
 
 /* 메시지 내 @user_id 멘션을 감지해 해당 유저에게 NOTIFY 전송.
  * g_sessions_mutex / g_file_mutex 를 보유하지 않은 상태에서 호출한다. */
-static void detect_mention(int room_id, const char *content,
+static void notify_mentions(int room_id, const char *content,
                             const char *sender_nick) {
     const char *p = content;
     while ((p = strchr(p, '@')) != NULL) {
@@ -410,7 +410,7 @@ static void handle_room_msg(ClientSession *sess, char *payload) {
 
     /* @멘션 감지 — 일반 메시지에 한해 실행 */
     if (msg_type == MSG_TYPE_NORMAL)
-        detect_mention(room_id, emo_content, nick);
+        notify_mentions(room_id, emo_content, nick);
 }
 
 /* "//" 구분자로 line 을 최대 max_f 개 필드로 분리 (content-last). */

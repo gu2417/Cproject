@@ -18,6 +18,9 @@
 #include "message.h"
 
 int main(void) {
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+
     WSADATA      wsa;
     SOCKET       listen_sock;
     SOCKADDR_IN  addr;
