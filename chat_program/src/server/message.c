@@ -11,7 +11,14 @@
 #include "file_io.h"
 #include "broadcast.h"
 #include "router.h"
+#include "user_store.h"
 #include "message.h"
+
+static void msg_ts_hhmm(const char *ts_long, char out[6]) {
+    int h = 0, m = 0;
+    sscanf(ts_long, "%*d-%*d-%*d %d:%d", &h, &m);
+    snprintf(out, 6, "%02d.%02d", h, m);
+}
 
 /* "//" 구분자로 line 을 최대 max_f 개 필드로 분리. 마지막 필드는 content-last.
  * 반환값: 파싱된 필드 수. line 은 파괴적으로 수정된다. */
@@ -247,17 +254,260 @@ static void handle_msg_delete(ClientSession *sess, char *payload) {
     }
 }
 
-/* MSG_REPLY|room_id:reply_to_id:content (P3 — 미구현) */
+/* MSG_REPLY|room_id:reply_to_id:content  (content-last)
+ * 지정 메시지를 인용한 일반 메시지 전송. reply_to_id를 reply_to 필드에 저장.
+ * → ROOM_MSG_RECV|room_id:nick:ts:msg_id:reply_to:msg_type:content */
 static void handle_msg_reply(ClientSession *sess, char *payload) {
-    (void)payload;
     if (sess->user_id[0] == '\0') return;
+
+    char *room_id_s  = strtok(payload, ":");
+    char *reply_to_s = strtok(NULL,    ":");
+    char *content    = strtok(NULL,    "");
+    if (!room_id_s || !reply_to_s || !content) return;
+
+    int n = (int)strlen(content);
+    while (n > 0 && (content[n-1] == '\r' || content[n-1] == '\n'))
+        content[--n] = '\0';
+    if (n == 0) return;
+
+    int room_id  = atoi(room_id_s);
+    int reply_to = atoi(reply_to_s);
+
+    /* MUTEX: g_sessions_mutex — 멤버십 확인 + is_open 캡처 */
+    WaitForSingleObject(g_sessions_mutex, INFINITE);
+    int is_member = 0, is_open_room = 0;
+    {
+        int idx = find_room_idx(room_id);
+        if (idx >= 0) {
+            int j;
+            is_open_room = g_rooms[idx].info.is_open;
+            for (j = 0; j < g_rooms[idx].member_count; j++) {
+                if (strcmp(g_rooms[idx].member_ids[j], sess->user_id) == 0) {
+                    is_member = 1; break;
+                }
+            }
+        }
+    }
+    ReleaseMutex(g_sessions_mutex);
+    if (!is_member) return;
+
+    char nick[21], ts_long[20], ts_short[6];
+    get_nickname(sess->user_id, nick);
+    /* 오픈채팅 방이면 open_nick 우선 조회 */
+    if (is_open_room) {
+        int mi;
+        for (mi = 0; mi < g_room_member_count; mi++) {
+            if (g_room_members[mi].room_id == room_id &&
+                strcmp(g_room_members[mi].user_id, sess->user_id) == 0 &&
+                g_room_members[mi].open_nick[0] != '\0') {
+                strncpy(nick, g_room_members[mi].open_nick, 20);
+                nick[20] = '\0';
+                break;
+            }
+        }
+    }
+    get_current_timestamp(ts_long);
+    msg_ts_hhmm(ts_long, ts_short);
+
+    int msg_id;
+    /* MUTEX: g_file_mutex */
+    WaitForSingleObject(g_file_mutex, INFINITE);
+    msg_id = g_next_msg_id++;
+    {
+        MessageRecord m;
+        memset(&m, 0, sizeof(m));
+        m.id          = msg_id;
+        m.room_id     = room_id;
+        m.reply_to_id = reply_to;
+        strncpy(m.from_id,    sess->user_id, 20);
+        strncpy(m.from_nick,  nick, 20);
+        m.msg_type = MSG_TYPE_NORMAL;
+        strncpy(m.created_at, ts_long, 19);
+        strncpy(m.content,    content, MAX_PKT_SIZE - 1);
+        append_message(FILE_MESSAGES, &m);
+    }
+    ReleaseMutex(g_file_mutex);
+
+    char buf[MAX_PKT_SIZE];
+    int  mlen = snprintf(buf, sizeof(buf) - 2,
+                         ROOM_MSG_RECV "|%d:%s:%s:%d:%d:%d:%s",
+                         room_id, nick, ts_short, msg_id, reply_to,
+                         MSG_TYPE_NORMAL, content);
+    if (mlen > 0 && mlen < (int)sizeof(buf) - 2) {
+        buf[mlen++] = '\n'; buf[mlen] = '\0';
+        broadcast_to_room(room_id, buf);
+    }
 }
 
-/* MSG_SEARCH|room_id:keyword (P3 — 미구현) */
+/* MSG_SEARCH|room_id:keyword  (keyword content-last)
+ * g_messages[]에서 room_id+keyword 일치 메시지 검색.
+ * → MSG_SEARCH_RES|count:msg_id:from_nick:ts:content;...  (count-first, content-last) */
 static void handle_msg_search(ClientSession *sess, char *payload) {
-    (void)payload;
     if (sess->user_id[0] == '\0') return;
-    send_packet(sess->sock, MSG_SEARCH_RES "|0");
+
+    char *room_id_s = strtok(payload, ":");
+    char *keyword   = strtok(NULL,    "");
+    if (!room_id_s || !keyword) {
+        send_packet(sess->sock, MSG_SEARCH_RES "|0");
+        return;
+    }
+
+    int n = (int)strlen(keyword);
+    while (n > 0 && (keyword[n-1] == '\r' || keyword[n-1] == '\n'))
+        keyword[--n] = '\0';
+    if (n == 0) {
+        send_packet(sess->sock, MSG_SEARCH_RES "|0");
+        return;
+    }
+
+    int room_id = atoi(room_id_s);
+    int i, cnt = 0;
+
+    /* 1패스: 결과 수 카운트 */
+    for (i = 0; i < g_msg_count; i++) {
+        MessageRecord *m = &g_messages[i];
+        if (m->room_id != room_id) continue;
+        if (m->is_deleted) continue;
+        if (m->msg_type == MSG_TYPE_SYSTEM) continue;
+        if (strstr(m->content, keyword)) cnt++;
+    }
+
+    /* 2패스: 패킷 빌드  MSG_SEARCH_RES|count:entry1;entry2;... */
+    char buf[MAX_PKT_SIZE];
+    int  off = snprintf(buf, sizeof(buf) - 2, MSG_SEARCH_RES "|%d", cnt);
+    int  found = 0;
+
+    for (i = 0; i < g_msg_count && off < (int)sizeof(buf) - 200; i++) {
+        MessageRecord *m = &g_messages[i];
+        if (m->room_id != room_id) continue;
+        if (m->is_deleted) continue;
+        if (m->msg_type == MSG_TYPE_SYSTEM) continue;
+        if (!strstr(m->content, keyword)) continue;
+
+        char ts_s[6];
+        msg_ts_hhmm(m->created_at, ts_s);
+        const char *nick = m->from_nick[0] ? m->from_nick : m->from_id;
+
+        if (found == 0)
+            off += snprintf(buf + off, sizeof(buf) - off - 2,
+                            ":%d:%s:%s:%s", m->id, nick, ts_s, m->content);
+        else
+            off += snprintf(buf + off, sizeof(buf) - off - 2,
+                            ";%d:%s:%s:%s", m->id, nick, ts_s, m->content);
+        found++;
+    }
+
+    if (off > 0 && off < (int)sizeof(buf) - 2) {
+        buf[off++] = '\n'; buf[off] = '\0';
+        send(sess->sock, buf, off, 0);
+    }
+}
+
+/* WHISPER|room_id:target_id:content  (content content-last)
+ * 같은 방에 있는 target_id 에게만 귓속말 전송.
+ * → 송신자와 수신자 모두에게 WHISPER_RECV|room_id:from_id:from_nick:content */
+static void handle_whisper(ClientSession *sess, char *payload) {
+    if (sess->user_id[0] == '\0') return;
+
+    char *room_id_s = strtok(payload, ":");
+    char *target_id = strtok(NULL,    ":");
+    char *content   = strtok(NULL,    "");
+    if (!room_id_s || !target_id || !content) return;
+
+    int n = (int)strlen(content);
+    while (n > 0 && (content[n-1] == '\r' || content[n-1] == '\n'))
+        content[--n] = '\0';
+    if (n == 0) return;
+
+    n = (int)strlen(target_id);
+    while (n > 0 && (target_id[n-1] == '\r' || target_id[n-1] == '\n'))
+        target_id[--n] = '\0';
+
+    int room_id = atoi(room_id_s);
+
+    /* 송신자가 해당 방의 멤버인지, 수신자도 같은 방에 있는지 확인 */
+    int sender_in_room = 0, target_in_room = 0;
+    int i;
+    /* MUTEX: g_sessions_mutex */
+    WaitForSingleObject(g_sessions_mutex, INFINITE);
+    for (i = 0; i < MAX_CLIENTS; i++) {
+        if (!g_sessions[i].active) continue;
+        if (strcmp(g_sessions[i].user_id, sess->user_id) == 0 &&
+            g_sessions[i].room_id == room_id)
+            sender_in_room = 1;
+        if (strcmp(g_sessions[i].user_id, target_id) == 0 &&
+            g_sessions[i].room_id == room_id)
+            target_in_room = 1;
+    }
+    ReleaseMutex(g_sessions_mutex);
+
+    if (!sender_in_room || !target_in_room) return;
+
+    char nick[21];
+    get_nickname(sess->user_id, nick);
+
+    char buf[MAX_PKT_SIZE];
+    int  mlen = snprintf(buf, sizeof(buf) - 2,
+                         WHISPER_RECV "|%d:%s:%s:%s",
+                         room_id, sess->user_id, nick, content);
+    if (mlen <= 0 || mlen >= (int)sizeof(buf) - 2) return;
+    buf[mlen++] = '\n'; buf[mlen] = '\0';
+
+    /* 수신자와 송신자 모두에게 전달 */
+    send_to_user(target_id, buf);
+    if (strcmp(sess->user_id, target_id) != 0)
+        send_to_user(sess->user_id, buf);
+}
+
+/* MSG_PIN|room_id:msg_id
+ * 방장 또는 관리자만 가능. 핀 메시지 갱신 후 MSG_PIN_NOTIFY|room_id:msg_id 브로드캐스트.
+ * msg_id=0 이면 핀 해제. */
+static void handle_msg_pin(ClientSession *sess, char *payload) {
+    if (sess->user_id[0] == '\0') return;
+
+    char *room_id_s = strtok(payload, ":");
+    char *msg_id_s  = strtok(NULL, "");
+    if (!room_id_s || !msg_id_s) return;
+
+    int n = (int)strlen(msg_id_s);
+    while (n > 0 && (msg_id_s[n-1] == '\r' || msg_id_s[n-1] == '\n'))
+        msg_id_s[--n] = '\0';
+
+    int room_id = atoi(room_id_s);
+    int msg_id  = atoi(msg_id_s);
+
+    /* MUTEX: g_sessions_mutex — 권한 확인 및 핀 메시지 갱신 */
+    WaitForSingleObject(g_sessions_mutex, INFINITE);
+    int idx = find_room_idx(room_id);
+    if (idx < 0) { ReleaseMutex(g_sessions_mutex); return; }
+
+    /* 방장 또는 관리자 확인 */
+    int is_owner = (strcmp(g_rooms[idx].info.owner_id, sess->user_id) == 0);
+    int is_admin = 0;
+    int j;
+    for (j = 0; j < g_rooms[idx].member_count; j++) {
+        if (strcmp(g_rooms[idx].member_ids[j], sess->user_id) == 0) {
+            if (g_rooms[idx].admin_flags[j]) is_admin = 1;
+            break;
+        }
+    }
+    if (!is_owner && !is_admin) { ReleaseMutex(g_sessions_mutex); return; }
+
+    g_rooms[idx].info.pinned_msg_id = msg_id;
+    ReleaseMutex(g_sessions_mutex);
+
+    /* MUTEX: g_file_mutex */
+    WaitForSingleObject(g_file_mutex, INFINITE);
+    save_rooms(FILE_ROOMS);
+    ReleaseMutex(g_file_mutex);
+
+    char buf[64];
+    int  mlen = snprintf(buf, sizeof(buf) - 2,
+                         MSG_PIN_NOTIFY "|%d:%d", room_id, msg_id);
+    if (mlen > 0 && mlen < (int)sizeof(buf) - 2) {
+        buf[mlen++] = '\n'; buf[mlen] = '\0';
+        broadcast_to_room(room_id, buf);
+    }
 }
 
 void message_init(void) {
@@ -265,4 +515,6 @@ void message_init(void) {
     register_handler(MSG_DELETE, handle_msg_delete);
     register_handler(MSG_REPLY,  handle_msg_reply);
     register_handler(MSG_SEARCH, handle_msg_search);
+    register_handler(WHISPER,    handle_whisper);
+    register_handler(MSG_PIN,    handle_msg_pin);
 }

@@ -453,7 +453,23 @@ static void handle_room_history(ClientSession *sess, char *payload) {
     int limit   = count_s ? atoi(count_s) : 50;
     if (limit <= 0 || limit > 100) limit = 50;
 
-    if (!is_room_member(room_id, sess->user_id)) {
+    /* MUTEX: g_sessions_mutex — 멤버십 확인 + is_open 캡처 */
+    int is_member = 0, is_open_room = 0;
+    WaitForSingleObject(g_sessions_mutex, INFINITE);
+    {
+        int idx = find_room_idx(room_id);
+        if (idx >= 0 && !g_rooms[idx].info.is_deleted) {
+            int j;
+            is_open_room = g_rooms[idx].info.is_open;
+            for (j = 0; j < g_rooms[idx].member_count; j++) {
+                if (strcmp(g_rooms[idx].member_ids[j], sess->user_id) == 0) {
+                    is_member = 1; break;
+                }
+            }
+        }
+    }
+    ReleaseMutex(g_sessions_mutex);
+    if (!is_member) {
         send_packet(sess->sock, ROOM_HISTORY_RES "|0");
         return;
     }
@@ -489,6 +505,19 @@ static void handle_room_history(ClientSession *sess, char *payload) {
             hist[hcount].id = atoi(f[0]);
             char nick[21];
             get_nickname(f[2], nick);
+            /* 오픈채팅 방이면 open_nick 우선 조회 */
+            if (is_open_room) {
+                int mi;
+                for (mi = 0; mi < g_room_member_count; mi++) {
+                    if (g_room_members[mi].room_id == room_id &&
+                        strcmp(g_room_members[mi].user_id, f[2]) == 0 &&
+                        g_room_members[mi].open_nick[0] != '\0') {
+                        strncpy(nick, g_room_members[mi].open_nick, 20);
+                        nick[20] = '\0';
+                        break;
+                    }
+                }
+            }
             strncpy(hist[hcount].from_nick, nick, 20);
             hist[hcount].from_nick[20] = '\0';
             ts_to_hhmm(f[7], hist[hcount].ts);

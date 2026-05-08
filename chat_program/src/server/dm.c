@@ -224,6 +224,7 @@ static void handle_dm_history(ClientSession *sess, char *payload) {
         char ts[20];
         char content[512];
         int  directed_to_me;   /* to_id == sess->user_id 이면 1 */
+        int  read;             /* 내가 이미 읽은 메시지이면 1 */
     } HistEntry;
 
     HistEntry hist[100];
@@ -257,6 +258,20 @@ static void handle_dm_history(ClientSession *sess, char *payload) {
             strncpy(hist[hcount].content, f[9], 511);
             hist[hcount].content[511] = '\0';
             hist[hcount].directed_to_me = (strcmp(to, sess->user_id) == 0);
+            /* 읽음 여부: 내가 보낸 메시지는 항상 1, 받은 메시지는 g_dm_reads 확인 */
+            if (!hist[hcount].directed_to_me) {
+                hist[hcount].read = 1;
+            } else {
+                int k;
+                hist[hcount].read = 0;
+                for (k = 0; k < g_dm_read_count; k++) {
+                    if (g_dm_reads[k].msg_id == hist[hcount].id &&
+                        strcmp(g_dm_reads[k].reader_id, sess->user_id) == 0) {
+                        hist[hcount].read = 1;
+                        break;
+                    }
+                }
+            }
             hcount++;
         }
         fclose(fp);
@@ -274,9 +289,9 @@ static void handle_dm_history(ClientSession *sess, char *payload) {
         /* i==start: count 와 첫 항목 사이 ':', 그 이후: 항목 사이 ';' */
         buf[off++] = (i == start) ? ':' : ';';
         off += snprintf(buf + off, sizeof(buf) - off,
-                        "%d:%s:%s:0:%s",
+                        "%d:%s:%s:%d:%s",
                         hist[i].id, hist[i].from_id,
-                        hist[i].ts, hist[i].content);
+                        hist[i].ts, hist[i].read, hist[i].content);
     }
     buf[off++] = '\n';
     buf[off]   = '\0';
