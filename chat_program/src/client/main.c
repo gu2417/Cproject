@@ -5,11 +5,13 @@
 #include "../common/protocol.h"
 #include "state.h"
 #include "net.h"
+#include "chat_tui.h"
 #include "menu_initial.h"
 
 int main(void) {
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
+    tui_init();
 
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {

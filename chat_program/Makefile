@@ -29,6 +29,7 @@ CLIENT_SRCS = \
     src/client/menu_dm.c \
     src/client/menu_mypage.c \
     src/client/menu_settings.c \
+    src/client/chat_tui.c \
     src/common/utils.c
 
 SERVER_LIBS = -lws2_32 -ladvapi32

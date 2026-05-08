@@ -8,6 +8,7 @@
 #include "state.h"
 #include "net.h"
 #include "packet.h"
+#include "chat_tui.h"
 #include "menu_dm.h"
 
 /* ─────────────────────────────────────────────────────────
@@ -25,49 +26,37 @@ static void show_dm_chat(const char *partner_id, const char *partner_nick) {
             sizeof(g_state.current_dm_partner_nick) - 1);
     g_state.current_dm_partner_nick[sizeof(g_state.current_dm_partner_nick) - 1] = '\0';
 
-    /* DM 히스토리 요청 — DM_HISTORY_REQ|<with_id>:<count> */
+    /* TUI 초기화 후 히스토리 요청 */
+    char tui_title[64];
+    snprintf(tui_title, sizeof(tui_title), "DM: %s", partner_nick);
+    tui_enter(tui_title);
+
     g_state.response_received = 0;
     send_packet(g_state.sock, "%s|%s:50", DM_HISTORY_REQ, partner_id);
     wait_response(5000);
 
-    WaitForSingleObject(g_console_mutex, INFINITE);
-    printf("\n══════════════════════════════\n");
-    printf("  [DM] %s 님과의 대화\n", partner_nick);
-    printf("  /back — 목록으로 돌아가기\n");
-    printf("══════════════════════════════\n");
-    fflush(stdout);
-    ReleaseMutex(g_console_mutex);
-
     char input[MAX_PKT_SIZE];
-    while (g_state.connected && g_state.logged_in) {
-        printf("> ");
-        fflush(stdout);
-
-        if (!fgets(input, (int)sizeof(input), stdin)) break;
-
-        int len = (int)strlen(input);
-        if (len > 0 && input[len - 1] == '\n') input[--len] = '\0';
-        if (len > 0 && input[len - 1] == '\r') input[--len] = '\0';
-        if (len == 0) continue;
+    for (;;) {
+        int len = tui_readline(input, (int)sizeof(input));
+        if (len < 0) break;   /* 연결 끊김 */
+        if (len == 0) {
+            if (g_state.current_dm_partner[0] == '\0') break;
+            continue;
+        }
 
         if (strcmp(input, "/back") == 0) break;
 
         if (has_forbidden_char(input)) {
-            WaitForSingleObject(g_console_mutex, INFINITE);
-            printf("  [오류] 메시지에 금지 문자(: ; | \\n)가 포함되어 있습니다.\n");
-            fflush(stdout);
-            ReleaseMutex(g_console_mutex);
+            tui_printf("  [오류] 메시지에 금지 문자(: ; | \\n)가 포함되어 있습니다.");
             continue;
         }
 
         /* DM_SEND|<to_id>:<content>  (content-last) */
         send_packet(g_state.sock, "%s|%s:%s", DM_SEND, partner_id, input);
-
-        WaitForSingleObject(g_console_mutex, INFINITE);
-        printf("[나] %s\n", input);
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf("[나] %s", input);
     }
+
+    tui_exit();
 
     /* DM 컨텍스트 초기화 */
     g_state.current_dm_partner[0]      = '\0';

@@ -90,6 +90,12 @@
   },
   "hotPaths": [
     {
+      "path": "chat_program/src/client/packet.c",
+      "accessCount": 42,
+      "lastAccessed": 1778254821855,
+      "type": "file"
+    },
+    {
       "path": "chat_program/src/server/room.c",
       "accessCount": 38,
       "lastAccessed": 1778252208827,
@@ -117,12 +123,6 @@
       "path": "chat_program/src/server/dm.c",
       "accessCount": 19,
       "lastAccessed": 1778246980636,
-      "type": "file"
-    },
-    {
-      "path": "chat_program/src/client/packet.c",
-      "accessCount": 19,
-      "lastAccessed": 1778252222479,
       "type": "file"
     },
     {
@@ -163,8 +163,8 @@
     },
     {
       "path": "chat_program/src/client/menu_chat.c",
-      "accessCount": 10,
-      "lastAccessed": 1778245198224,
+      "accessCount": 12,
+      "lastAccessed": 1778253612535,
       "type": "file"
     },
     {
@@ -183,6 +183,12 @@
       "path": "chat_program/src/server/broadcast.c",
       "accessCount": 7,
       "lastAccessed": 1778245597686,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/client/menu_dm.c",
+      "accessCount": 7,
+      "lastAccessed": 1778254875828,
       "type": "file"
     },
     {
@@ -210,6 +216,12 @@
       "type": "file"
     },
     {
+      "path": "chat_program/src/client/main.c",
+      "accessCount": 4,
+      "lastAccessed": 1778253826927,
+      "type": "file"
+    },
+    {
       "path": "chat_program/src/server/broadcast.h",
       "accessCount": 3,
       "lastAccessed": 1778244465998,
@@ -231,6 +243,12 @@
       "path": "chat_program/src/server/client_handler.c",
       "accessCount": 3,
       "lastAccessed": 1778245579333,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/client/state.h",
+      "accessCount": 3,
+      "lastAccessed": 1778252659634,
       "type": "file"
     },
     {
@@ -258,21 +276,9 @@
       "type": "file"
     },
     {
-      "path": "chat_program/src/client/menu_dm.c",
+      "path": "chat_program/src/client/state.c",
       "accessCount": 2,
-      "lastAccessed": 1778244782347,
-      "type": "file"
-    },
-    {
-      "path": "chat_program/src/client/state.h",
-      "accessCount": 2,
-      "lastAccessed": 1778244801492,
-      "type": "file"
-    },
-    {
-      "path": "chat_program/src/client/main.c",
-      "accessCount": 2,
-      "lastAccessed": 1778251565357,
+      "lastAccessed": 1778252660032,
       "type": "file"
     },
     {
@@ -291,12 +297,6 @@
       "path": "chat_program/src/server/client_handler.h",
       "accessCount": 1,
       "lastAccessed": 1778242167959,
-      "type": "file"
-    },
-    {
-      "path": "chat_program/src/client/state.c",
-      "accessCount": 1,
-      "lastAccessed": 1778242169055,
       "type": "file"
     },
     {

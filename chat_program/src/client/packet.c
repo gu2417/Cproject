@@ -7,6 +7,7 @@
 #include "../common/utils.h"
 #include "state.h"
 #include "packet.h"
+#include "chat_tui.h"
 
 /* ── 리스트 캐시 전역 정의 ──────────────────────────────── */
 FriendEntry   g_friend_list[MAX_FRIEND_LIST];
@@ -20,28 +21,29 @@ int           g_dm_count = 0;
  * ───────────────────────────────────────────────────────── */
 void display_chat_message(const char *from_nick, const char *timestamp,
                           const char *content, int msg_type, int reply_to) {
-    WaitForSingleObject(g_console_mutex, INFINITE);
-    if (reply_to > 0)
-        printf("  [↩ #%d]\n", reply_to);
+    char line[TUI_MSG_WIDTH];
+    if (reply_to > 0) {
+        snprintf(line, sizeof(line), "  [↩ #%d]", reply_to);
+        tui_printf("%s", line);
+    }
     switch (msg_type) {
         case MSG_TYPE_NORMAL:
-            printf("[%s] %s: %s\n", timestamp, from_nick, content);
+            snprintf(line, sizeof(line), "[%s] %s: %s", timestamp, from_nick, content);
             break;
         case MSG_TYPE_SYSTEM:
-            printf("--- %s ---\n", content);
+            snprintf(line, sizeof(line), "--- %s ---", content);
             break;
         case MSG_TYPE_WHISPER:
-            printf("[귓속말] %s: %s\n", from_nick, content);
+            snprintf(line, sizeof(line), "[귓속말] %s: %s", from_nick, content);
             break;
         case MSG_TYPE_ME:
-            printf("* %s %s\n", from_nick, content);
+            snprintf(line, sizeof(line), "* %s %s", from_nick, content);
             break;
         default:
-            printf("[%s] %s: %s\n", timestamp, from_nick, content);
+            snprintf(line, sizeof(line), "[%s] %s: %s", timestamp, from_nick, content);
             break;
     }
-    fflush(stdout);
-    ReleaseMutex(g_console_mutex);
+    tui_printf("%s", line);
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -219,10 +221,7 @@ void packet_parse(const char *buf, SOCKET sock) {
         if (room_id == g_state.current_room_id) {
             display_chat_message(from_nick, timestamp, content, msg_type, reply_to);
         } else if (!g_state.dnd) {
-            WaitForSingleObject(g_console_mutex, INFINITE);
-            printf("\n[알림] 채팅방 #%d: %s\n> ", room_id, content);
-            fflush(stdout);
-            ReleaseMutex(g_console_mutex);
+            tui_printf("[알림] 채팅방 #%d: %s", room_id, content);
         }
     }
     else if (strcmp(type, ROOM_KICKED_NOTIFY) == 0) {
@@ -231,49 +230,35 @@ void packet_parse(const char *buf, SOCKET sock) {
         char *by_nick = strtok(NULL, ":");
         g_state.current_room_id      = 0;
         g_state.current_room_name[0] = '\0';
-        WaitForSingleObject(g_console_mutex, INFINITE);
-        printf("\n[강퇴] %s님에 의해 채팅방에서 강퇴되었습니다.\n"
-               "  Enter를 누르면 메뉴로 돌아갑니다.\n",
-               by_nick ? by_nick : "관리자");
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf("[강퇴] %s님에 의해 채팅방에서 강퇴되었습니다.",
+                   by_nick ? by_nick : "관리자");
     }
     else if (strcmp(type, ROOM_NOTICE) == 0) {
         if (!payload) return;
         strtok(payload, ":");          /* room_id 건너뜀 */
         char *notice = strtok(NULL, "");
-        if (notice) {
-            WaitForSingleObject(g_console_mutex, INFINITE);
-            printf("\n[공지] %s\n", notice);
-            fflush(stdout);
-            ReleaseMutex(g_console_mutex);
-        }
+        if (notice)
+            tui_printf("[공지] %s", notice);
     }
     else if (strcmp(type, ROOM_INVITE_NOTIFY) == 0) {
         if (!payload) return;
         char *rid_s    = strtok(payload, ":");
         char *rname    = strtok(NULL, ":");
         char *inv_nick = strtok(NULL, ":");
-        WaitForSingleObject(g_console_mutex, INFINITE);
-        printf("\n[초대] %s님이 '%s' 방에 초대했습니다. (방 ID: %s)\n> ",
-               inv_nick ? inv_nick : "누군가",
-               rname    ? rname    : "",
-               rid_s    ? rid_s    : "?");
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf("[초대] %s님이 '%s' 방에 초대했습니다. (방 ID: %s)",
+                   inv_nick ? inv_nick : "누군가",
+                   rname    ? rname    : "",
+                   rid_s    ? rid_s    : "?");
     }
     else if (strcmp(type, ROOM_INVITE_RES) == 0) {
         int code = payload ? atoi(payload) : -1;
         g_last_code = code;
-        WaitForSingleObject(g_console_mutex, INFINITE);
         static const char *inv_msgs[] = {
             "초대를 보냈습니다.", "사용자를 찾을 수 없습니다.",
             "이미 방에 있는 사용자입니다.", "방이 가득 찼습니다."
         };
-        printf("[초대] %s\n",
-               (code >= 0 && code <= 3) ? inv_msgs[code] : "오류");
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf("[초대] %s",
+                   (code >= 0 && code <= 3) ? inv_msgs[code] : "오류");
         g_state.response_received = 1;
     }
 
@@ -286,26 +271,18 @@ void packet_parse(const char *buf, SOCKET sock) {
         char *mid_s   = strtok(NULL, ":");
         char *content = strtok(NULL, "");  /* content-last */
         int room_id   = rid_s ? atoi(rid_s) : -1;
-        if (room_id == g_state.current_room_id || room_id == 0) {
-            WaitForSingleObject(g_console_mutex, INFINITE);
-            printf("\n[수정됨] #%s: %s\n> ",
-                   mid_s ? mid_s : "?", content ? content : "");
-            fflush(stdout);
-            ReleaseMutex(g_console_mutex);
-        }
+        if (room_id == g_state.current_room_id || room_id == 0)
+            tui_printf("[수정됨] #%s: %s",
+                       mid_s ? mid_s : "?", content ? content : "");
     }
     else if (strcmp(type, MSG_DELETED_NOTIFY) == 0) {
         if (!payload) return;
         char *rid_s = strtok(payload, ":");
         char *mid_s = strtok(NULL, ":");
         int room_id = rid_s ? atoi(rid_s) : -1;
-        if (room_id == g_state.current_room_id || room_id == 0) {
-            WaitForSingleObject(g_console_mutex, INFINITE);
-            printf("\n[삭제됨] 메시지 #%s가 삭제되었습니다.\n> ",
-                   mid_s ? mid_s : "?");
-            fflush(stdout);
-            ReleaseMutex(g_console_mutex);
-        }
+        if (room_id == g_state.current_room_id || room_id == 0)
+            tui_printf("[삭제됨] 메시지 #%s가 삭제되었습니다.",
+                       mid_s ? mid_s : "?");
     }
     else if (strcmp(type, MSG_SEARCH_RES) == 0) {
         WaitForSingleObject(g_console_mutex, INFINITE);
@@ -364,10 +341,7 @@ void packet_parse(const char *buf, SOCKET sock) {
             display_chat_message(from_nick, timestamp ? timestamp : "",
                                  content, MSG_TYPE_NORMAL, 0);
         } else if (!g_state.dnd) {
-            WaitForSingleObject(g_console_mutex, INFINITE);
-            printf("\n[DM] %s: %s\n> ", from_nick, content);
-            fflush(stdout);
-            ReleaseMutex(g_console_mutex);
+            tui_printf("[DM] %s: %s", from_nick, content);
         }
     }
     else if (strcmp(type, DM_LIST_RES) == 0) {
@@ -416,7 +390,7 @@ void packet_parse(const char *buf, SOCKET sock) {
     else if (strcmp(type, DM_HISTORY_RES) == 0) {
         WaitForSingleObject(g_console_mutex, INFINITE);
         if (!payload || !*payload) {
-            printf("  (이전 메시지가 없습니다)\n");
+            tui_puts("  (이전 메시지가 없습니다)");
         } else {
             char tmp2[MAX_BUF_SIZE];
             strncpy(tmp2, payload, MAX_BUF_SIZE - 1);
@@ -444,18 +418,19 @@ void packet_parse(const char *buf, SOCKET sock) {
                         int is_me = (strcmp(from_id_s, g_state.user_id) == 0);
                         const char *nick = is_me ? g_state.nickname
                                                  : g_state.current_dm_partner_nick;
-                        printf("[%s] %s: %s\n",
-                               ts ? ts : "?",
-                               (nick && nick[0]) ? nick : from_id_s,
-                               content);
+                        char hline[TUI_MSG_WIDTH];
+                        snprintf(hline, sizeof(hline), "[%s] %s: %s",
+                                 ts ? ts : "?",
+                                 (nick && nick[0]) ? nick : from_id_s,
+                                 content);
+                        tui_puts(hline);
                     }
                     entry = safe_strtok_r(NULL, ";", &sp_entry);
                 }
             } else {
-                printf("  (이전 메시지가 없습니다)\n");
+                tui_puts("  (이전 메시지가 없습니다)");
             }
         }
-        fflush(stdout);
         ReleaseMutex(g_console_mutex);
         g_state.response_received = 1;
     }
@@ -494,22 +469,22 @@ void packet_parse(const char *buf, SOCKET sock) {
 
                     if (content) {
                         int mtype = mtype_s ? atoi(mtype_s) : 0;
-                        if (mtype == 1) {
-                            printf("  --- %s ---\n", content);
-                        } else {
-                            printf("[%s] %s: %s\n",
-                                   ts ? ts : "?",
-                                   from_nick ? from_nick : "?",
-                                   content);
-                        }
+                        char hline[TUI_MSG_WIDTH];
+                        if (mtype == 1)
+                            snprintf(hline, sizeof(hline), "  --- %s ---", content);
+                        else
+                            snprintf(hline, sizeof(hline), "[%s] %s: %s",
+                                     ts ? ts : "?",
+                                     from_nick ? from_nick : "?",
+                                     content);
+                        tui_puts(hline);
                     }
                     entry = safe_strtok_r(NULL, ";", &sp_entry);
                 }
             } else {
-                printf("  (이전 메시지가 없습니다)\n");
+                tui_puts("  (이전 메시지가 없습니다)");
             }
         }
-        fflush(stdout);
         ReleaseMutex(g_console_mutex);
         g_state.response_received = 1;
     }
@@ -578,11 +553,8 @@ void packet_parse(const char *buf, SOCKET sock) {
         char *from_id   = strtok(payload, ":");
         char *from_nick = strtok(NULL, ":");
         if (!from_id || !from_nick) return;
-        WaitForSingleObject(g_console_mutex, INFINITE);
-        printf("\n[친구 요청] %s(%s)님이 친구 요청을 보냈습니다.\n> ",
-               from_nick, from_id);
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf("[친구 요청] %s(%s)님이 친구 요청을 보냈습니다.",
+                   from_nick, from_id);
     }
     else if (strcmp(type, FRIEND_STATUS_CHANGE) == 0) {
         if (!payload) return;
@@ -593,20 +565,14 @@ void packet_parse(const char *buf, SOCKET sock) {
         int status = atoi(status_s);
         if (status < 0 || status > 3) status = 0;
         static const char *labels[] = {"오프라인", "온라인", "바쁨", "오프라인"};
-        WaitForSingleObject(g_console_mutex, INFINITE);
-        printf("\n[알림] %s(%s) → %s\n> ", nick, id_s, labels[status]);
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf("[알림] %s(%s) → %s", nick, id_s, labels[status]);
     }
     else if (strcmp(type, FRIEND_ACCEPT_NOTIFY) == 0) {
         if (!payload) return;
         char *id_s = strtok(payload, ":");
         char *nick = strtok(NULL, ":");
         if (!id_s || !nick) return;
-        WaitForSingleObject(g_console_mutex, INFINITE);
-        printf("\n[친구] %s(%s)님이 친구 요청을 수락했습니다.\n> ", nick, id_s);
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf("[친구] %s(%s)님이 친구 요청을 수락했습니다.", nick, id_s);
     }
 
     /* ══════════════════════════════
@@ -654,25 +620,15 @@ void packet_parse(const char *buf, SOCKET sock) {
     else if (strcmp(type, PROFILE_UPDATE_RES) == 0) {
         int code = payload ? atoi(payload) : -1;
         g_last_code = code;
-        WaitForSingleObject(g_console_mutex, INFINITE);
-        if (code == 0)
-            printf("[프로필 수정 성공] 변경되었습니다.\n");
-        else
-            printf("[프로필 수정 실패] 이미 사용 중인 닉네임입니다.\n");
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf(code == 0 ? "[프로필 수정 성공] 변경되었습니다."
+                             : "[프로필 수정 실패] 이미 사용 중인 닉네임입니다.");
         g_state.response_received = 1;
     }
     else if (strcmp(type, PASS_CHANGE_RES) == 0) {
         int code = payload ? atoi(payload) : -1;
         g_last_code = code;
-        WaitForSingleObject(g_console_mutex, INFINITE);
-        if (code == 0)
-            printf("[비밀번호 변경 성공] 변경되었습니다.\n");
-        else
-            printf("[비밀번호 변경 실패] 현재 비밀번호가 틀렸습니다.\n");
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf(code == 0 ? "[비밀번호 변경 성공] 변경되었습니다."
+                             : "[비밀번호 변경 실패] 현재 비밀번호가 틀렸습니다.");
         g_state.response_received = 1;
     }
 
@@ -701,13 +657,7 @@ void packet_parse(const char *buf, SOCKET sock) {
     else if (strcmp(type, SETTINGS_UPDATE_RES) == 0) {
         int code = payload ? atoi(payload) : -1;
         g_last_code = code;
-        WaitForSingleObject(g_console_mutex, INFINITE);
-        if (code == 0)
-            printf("[설정 저장 성공]\n");
-        else
-            printf("[설정 저장 실패]\n");
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf(code == 0 ? "[설정 저장 성공]" : "[설정 저장 실패]");
         g_state.response_received = 1;
     }
 
@@ -722,12 +672,8 @@ void packet_parse(const char *buf, SOCKET sock) {
         if (!rid_s || !nick || !typing_s) return;
         int room_id   = atoi(rid_s);
         int is_typing = atoi(typing_s);
-        if (room_id == g_state.current_room_id && is_typing) {
-            WaitForSingleObject(g_console_mutex, INFINITE);
-            printf("\n[%s 님이 입력 중...]\n> ", nick);
-            fflush(stdout);
-            ReleaseMutex(g_console_mutex);
-        }
+        if (room_id == g_state.current_room_id && is_typing)
+            tui_printf("[%s 님이 입력 중...]", nick);
     }
 
     /* ══════════════════════════════
@@ -737,10 +683,7 @@ void packet_parse(const char *buf, SOCKET sock) {
         if (!payload) return;
         strtok(payload, ":");          /* sub_type 건너뜀 */
         char *content = strtok(NULL, "");
-        WaitForSingleObject(g_console_mutex, INFINITE);
-        printf("\n[알림] %s\n> ", content ? content : "");
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf("[알림] %s", content ? content : "");
     }
 
     /* ══════════════════════════════
@@ -751,16 +694,12 @@ void packet_parse(const char *buf, SOCKET sock) {
         int room_id = atoi(payload);
         g_state.current_room_id      = 0;
         g_state.current_room_name[0] = '\0';
-        WaitForSingleObject(g_console_mutex, INFINITE);
-        printf("\n[알림] 채팅방 #%d가 삭제되었습니다.\n"
-               "  Enter를 누르면 메뉴로 돌아갑니다.\n", room_id);
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf("[알림] 채팅방 #%d가 삭제되었습니다.", room_id);
     }
     else if (strcmp(type, ROOM_MEMBERS_RES) == 0) {
         WaitForSingleObject(g_console_mutex, INFINITE);
         if (!payload || !*payload) {
-            printf("  (멤버 없음)\n");
+            tui_puts("  (멤버 없음)");
         } else {
             char tmp2[MAX_BUF_SIZE];
             strncpy(tmp2, payload, MAX_BUF_SIZE - 1);
@@ -768,7 +707,9 @@ void packet_parse(const char *buf, SOCKET sock) {
             char *sp_cnt;
             char *cnt_s = safe_strtok_r(tmp2, ":", &sp_cnt);
             int   cnt   = cnt_s ? atoi(cnt_s) : 0;
-            printf("\n  멤버 목록 (%d명):\n", cnt);
+            char hline[TUI_MSG_WIDTH];
+            snprintf(hline, sizeof(hline), "  멤버 목록 (%d명):", cnt);
+            tui_puts(hline);
             if (cnt > 0 && sp_cnt && *sp_cnt) {
                 char *sp_entry;
                 char *entry = safe_strtok_r(sp_cnt, ";", &sp_entry);
@@ -784,16 +725,16 @@ void packet_parse(const char *buf, SOCKET sock) {
                     if (uid && nick) {
                         int ost = (onl_s && atoi(onl_s) >= 0 && atoi(onl_s) <= 3)
                                   ? atoi(onl_s) : 0;
-                        printf("    %s (%s) %s [%s]\n",
-                               nick, uid,
-                               (adm_s && adm_s[0] == '1') ? "[관리자]" : "",
-                               ostatus[ost]);
+                        snprintf(hline, sizeof(hline), "    %s (%s) %s [%s]",
+                                 nick, uid,
+                                 (adm_s && adm_s[0] == '1') ? "[관리자]" : "",
+                                 ostatus[ost]);
+                        tui_puts(hline);
                     }
                     entry = safe_strtok_r(NULL, ";", &sp_entry);
                 }
             }
         }
-        fflush(stdout);
         ReleaseMutex(g_console_mutex);
         g_state.response_received = 1;
     }
@@ -850,20 +791,14 @@ void packet_parse(const char *buf, SOCKET sock) {
         strtok(payload, ":");
         char *mute_s = strtok(NULL, "");
         int   muted  = mute_s ? atoi(mute_s) : 0;
-        WaitForSingleObject(g_console_mutex, INFINITE);
-        printf("[알림] 방 알림 %s\n", muted ? "끄기 완료" : "켜기 완료");
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf("[알림] 방 알림 %s", muted ? "끄기 완료" : "켜기 완료");
         g_state.response_received = 1;
     }
     else if (strcmp(type, ROOM_SET_OPEN_NICK_RES) == 0) {
         int code = payload ? atoi(payload) : -1;
         g_last_code = code;
-        WaitForSingleObject(g_console_mutex, INFINITE);
-        printf(code == 0 ? "[오픈채팅 닉네임 변경 성공]\n"
-                         : "[오픈채팅 닉네임 변경 실패]\n");
-        fflush(stdout);
-        ReleaseMutex(g_console_mutex);
+        tui_printf(code == 0 ? "[오픈채팅 닉네임 변경 성공]"
+                             : "[오픈채팅 닉네임 변경 실패]");
         g_state.response_received = 1;
     }
     else if (strcmp(type, WHISPER_RECV) == 0) {
@@ -874,12 +809,8 @@ void packet_parse(const char *buf, SOCKET sock) {
         char *content   = strtok(NULL,    "");
         if (!rid_s || !from_id || !from_nick || !content) return;
         int room_id = atoi(rid_s);
-        if (room_id == g_state.current_room_id) {
-            WaitForSingleObject(g_console_mutex, INFINITE);
-            printf("[귓속말] %s: %s\n", from_nick, content);
-            fflush(stdout);
-            ReleaseMutex(g_console_mutex);
-        }
+        if (room_id == g_state.current_room_id)
+            tui_printf("[귓속말] %s: %s", from_nick, content);
     }
     else if (strcmp(type, MSG_PIN_NOTIFY) == 0) {
         if (!payload) return;
@@ -887,13 +818,10 @@ void packet_parse(const char *buf, SOCKET sock) {
         char *mid_s = strtok(NULL, "");
         int room_id = rid_s ? atoi(rid_s) : 0;
         if (room_id == g_state.current_room_id) {
-            WaitForSingleObject(g_console_mutex, INFINITE);
             if (mid_s && atoi(mid_s) > 0)
-                printf("\n[핀 메시지] #%s\n> ", mid_s);
+                tui_printf("[핀 메시지] #%s", mid_s);
             else
-                printf("\n[핀 메시지 해제됨]\n> ");
-            fflush(stdout);
-            ReleaseMutex(g_console_mutex);
+                tui_printf("[핀 메시지 해제됨]");
         }
     }
 
