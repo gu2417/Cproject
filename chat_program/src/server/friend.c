@@ -70,7 +70,7 @@ static void handle_friend_add(ClientSession *sess, char *payload) {
             send_packet(sess->sock, FRIEND_ADD_RES "|%d", FRIEND_ALREADY);
         return;
     }
-    if (g_friend_count >= MAX_CLIENTS * 4) {
+    if (g_friend_count >= MAX_FRIENDS) {
         ReleaseMutex(g_sessions_mutex);
         send_packet(sess->sock, FRIEND_ADD_RES "|%d", FRIEND_NOT_FOUND);
         return;
@@ -215,7 +215,7 @@ static void handle_friend_block(ClientSession *sess, char *payload) {
         strncpy(fr->user_id,   sess->user_id, 20);
         strncpy(fr->friend_id, target_id,     20);
         fr->status = FRIEND_BLOCKED_S;
-    } else if (g_friend_count < MAX_CLIENTS * 4) {
+    } else if (g_friend_count < MAX_FRIENDS) {
         fr = &g_friends[g_friend_count];
         memset(fr, 0, sizeof(*fr));
         fr->id = g_next_friend_id++;
@@ -233,7 +233,7 @@ static void handle_friend_block(ClientSession *sess, char *payload) {
 }
 
 /* FRIEND_LIST_REQ|
- * → FRIEND_LIST_RES|count:friend_id:nick:friend_status:online_status;... */
+ * → FRIEND_LIST_RES|count:friend_id:nick:friend_status:status_msg;... (status_msg content-last) */
 static void handle_friend_list(ClientSession *sess, char *payload) {
     (void)payload;
     if (sess->user_id[0] == '\0') return;
@@ -252,29 +252,24 @@ static void handle_friend_list(ClientSession *sess, char *payload) {
         else if (strcmp(fr->friend_id, sess->user_id) == 0) other = fr->user_id;
         else continue;
 
-        int online_st = 0;
-        int j;
-        for (j = 0; j < MAX_CLIENTS; j++) {
-            if (g_sessions[j].active && strcmp(g_sessions[j].user_id, other) == 0) {
-                online_st = g_sessions[j].online_status;
-                break;
-            }
-        }
-
-        /* mutex 보유 중이므로 직접 닉네임 조회 */
+        /* mutex 보유 중이므로 직접 닉네임/상태메시지 조회 */
         char nick[21];
+        char status_msg[101];
+        int  u;
         strncpy(nick, other, 20); nick[20] = '\0';
-        int u;
+        status_msg[0] = '\0';
         for (u = 0; u < g_user_count; u++) {
             if (strcmp(g_users[u].id_str, other) == 0) {
                 strncpy(nick, g_users[u].nickname, 20);
+                strncpy(status_msg, g_users[u].status_msg, 100);
                 break;
             }
         }
+        /* 온라인 상태는 FRIEND_STATUS_CHANGE 로 별도 통보됨 */
 
         if (cnt > 0) items[ioff++] = ';';
         ioff += snprintf(items + ioff, sizeof(items) - ioff,
-                         "%s:%s:%d:%d", other, nick, fr->status, online_st);
+                         "%s:%s:%d:%s", other, nick, fr->status, status_msg);
         cnt++;
     }
     ReleaseMutex(g_sessions_mutex);

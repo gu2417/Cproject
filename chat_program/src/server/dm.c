@@ -70,6 +70,9 @@ static void handle_dm_send(ClientSession *sess, char *payload) {
     if (mlen > 0 && mlen < (int)sizeof(buf) - 2) {
         buf[mlen++] = '\n'; buf[mlen] = '\0';
         send_to_user(to_id, buf);
+        /* 자기 자신에게 보내는 DM이 아니면 송신자에게도 echo */
+        if (strcmp(sess->user_id, to_id) != 0)
+            send_to_user(sess->user_id, buf);
     }
 }
 
@@ -106,6 +109,7 @@ static void handle_dm_list(ClientSession *sess, char *payload) {
         char last_ts[20];
         char last_msg[256];
         int  last_msg_id;
+        int  unread_count;
     } DmEntry;
 
     DmEntry entries[64];
@@ -149,6 +153,7 @@ static void handle_dm_list(ClientSession *sess, char *payload) {
                 strncpy(entries[found_idx].partner_id, partner, 20);
                 entries[found_idx].partner_id[20] = '\0';
                 entries[found_idx].last_msg_id = -1;
+                entries[found_idx].unread_count = 0;
             }
             if (msg_id > entries[found_idx].last_msg_id) {
                 entries[found_idx].last_msg_id = msg_id;
@@ -156,6 +161,19 @@ static void handle_dm_list(ClientSession *sess, char *payload) {
                 entries[found_idx].last_ts[19] = '\0';
                 strncpy(entries[found_idx].last_msg, f[9], 255);
                 entries[found_idx].last_msg[255] = '\0';
+            }
+            /* 미읽음 카운트: to_id 가 나이고 g_dm_reads 에 없는 메시지 */
+            if (strcmp(to_id, sess->user_id) == 0) {
+                int already_read = 0;
+                int k;
+                for (k = 0; k < g_dm_read_count; k++) {
+                    if (g_dm_reads[k].msg_id == msg_id &&
+                        strcmp(g_dm_reads[k].reader_id, sess->user_id) == 0) {
+                        already_read = 1;
+                        break;
+                    }
+                }
+                if (!already_read) entries[found_idx].unread_count++;
             }
         }
         fclose(fp);
@@ -171,9 +189,10 @@ static void handle_dm_list(ClientSession *sess, char *payload) {
         /* i==0: count 와 첫 항목 사이 ':', i>0: 항목 사이 ';' */
         buf[off++] = (i == 0) ? ':' : ';';
         off += snprintf(buf + off, sizeof(buf) - off,
-                        "%s:%s:%s:0:%s",
+                        "%s:%s:%s:%d:%s",
                         entries[i].partner_id, nick,
-                        entries[i].last_ts, entries[i].last_msg);
+                        entries[i].last_ts, entries[i].unread_count,
+                        entries[i].last_msg);
     }
     buf[off++] = '\n';
     buf[off]   = '\0';
@@ -204,6 +223,7 @@ static void handle_dm_history(ClientSession *sess, char *payload) {
         char from_id[21];
         char ts[20];
         char content[512];
+        int  directed_to_me;   /* to_id == sess->user_id 이면 1 */
     } HistEntry;
 
     HistEntry hist[100];
@@ -236,6 +256,7 @@ static void handle_dm_history(ClientSession *sess, char *payload) {
             hist[hcount].ts[19] = '\0';
             strncpy(hist[hcount].content, f[9], 511);
             hist[hcount].content[511] = '\0';
+            hist[hcount].directed_to_me = (strcmp(to, sess->user_id) == 0);
             hcount++;
         }
         fclose(fp);
@@ -260,6 +281,47 @@ static void handle_dm_history(ClientSession *sess, char *payload) {
     buf[off++] = '\n';
     buf[off]   = '\0';
     send(sess->sock, buf, off, 0);
+
+    /* 나에게 온 메시지를 읽음 처리하고 파트너에게 DM_READ_NOTIFY 전송 */
+    {
+        char read_ts[20];
+        int  max_read_id = 0;
+        int  k;
+        get_current_timestamp(read_ts);
+
+        /* MUTEX: g_file_mutex */
+        WaitForSingleObject(g_file_mutex, INFINITE);
+        for (i = start; i < hcount; i++) {
+            if (!hist[i].directed_to_me) continue;
+            int already = 0;
+            for (k = 0; k < g_dm_read_count; k++) {
+                if (g_dm_reads[k].msg_id == hist[i].id &&
+                    strcmp(g_dm_reads[k].reader_id, sess->user_id) == 0) {
+                    already = 1; break;
+                }
+            }
+            if (!already && g_dm_read_count < MAX_DM_READS) {
+                DmReadRecord *r = &g_dm_reads[g_dm_read_count];
+                memset(r, 0, sizeof(*r));
+                r->msg_id = hist[i].id;
+                strncpy(r->reader_id, sess->user_id, 20);
+                strncpy(r->read_at, read_ts, 19);
+                g_dm_read_count++;
+                append_dm_read(FILE_DM_READS, r);
+            }
+            if (hist[i].id > max_read_id) max_read_id = hist[i].id;
+        }
+        ReleaseMutex(g_file_mutex);
+
+        if (max_read_id > 0) {
+            char nbuf[128];
+            int  nlen = snprintf(nbuf, sizeof(nbuf) - 2,
+                                 DM_READ_NOTIFY "|%s:%d",
+                                 sess->user_id, max_read_id);
+            nbuf[nlen++] = '\n'; nbuf[nlen] = '\0';
+            send_to_user(with_id, nbuf);
+        }
+    }
 }
 
 void dm_init(void) {

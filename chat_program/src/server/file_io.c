@@ -203,21 +203,40 @@ int load_room_members(const char *path) {
     fp = fopen(path, "r");
     if (!fp) return 0;
 
+    g_room_member_count = 0;
     while (fgets(line, sizeof(line), fp)) {
         if (line[0] == '\n' || line[0] == '\r' || line[0] == '\0') continue;
         n = split_line(line, fields, 6);
         if (n < 6) continue;
 
-        int   room_id = atoi(fields[0]);
-        char *user_id = fields[1];
+        int   room_id  = atoi(fields[0]);
+        char *user_id  = fields[1];
+        char *open_nick = fields[2];
+        int   is_admin = atoi(fields[3]);
+        int   is_muted = atoi(fields[4]);
+        char *joined_at = fields[5];
 
-        /* 해당 방을 g_rooms[] 에서 찾아 member_ids 에 추가 */
+        /* g_room_members 전체 레코드 저장 */
+        if (g_room_member_count < MAX_ROOM_MEMBER_RECORDS) {
+            RoomMemberRecord *m = &g_room_members[g_room_member_count];
+            memset(m, 0, sizeof(*m));
+            m->room_id  = room_id;
+            strncpy(m->user_id,   user_id,   20);
+            strncpy(m->open_nick, open_nick,  20);
+            m->is_admin = is_admin;
+            m->is_muted = is_muted;
+            strncpy(m->joined_at, joined_at, 19);
+            g_room_member_count++;
+        }
+
+        /* 해당 방을 g_rooms[] 에서 찾아 member_ids / admin_flags 에 추가 */
         for (i = 0; i < g_room_count; i++) {
             if (g_rooms[i].info.id == room_id) {
                 int mc = g_rooms[i].member_count;
                 if (mc < MAX_ROOM_MEMBERS) {
                     strncpy(g_rooms[i].member_ids[mc], user_id, 20);
                     g_rooms[i].member_ids[mc][20] = '\0';
+                    g_rooms[i].admin_flags[mc] = is_admin;
                     g_rooms[i].member_count++;
                 }
                 break;
@@ -229,28 +248,29 @@ int load_room_members(const char *path) {
     return count;
 }
 
-/* 호출자는 g_file_mutex 를 보유해야 한다.
- * g_rooms[].member_ids 에서 재생성하므로 open_nick 등은 빈 값으로 저장된다.
- * NOTE: T7 에서 g_room_members 배열 추가 후 이 함수를 개선할 것. */
+/* 호출자는 g_file_mutex 를 보유해야 한다. */
 void save_room_members(const char *path) {
     FILE *fp;
     int   i, j;
-    char  ts[20];
 
     /* MUTEX: g_file_mutex (caller) */
     fp = fopen(path, "w");
     if (!fp) return;
 
-    /* 현재 시각 (joined_at 이 없으면 빈 값으로) */
-    ts[0] = '\0';
-
-    for (i = 0; i < g_room_count; i++) {
-        if (g_rooms[i].info.is_deleted) continue;
-        for (j = 0; j < g_rooms[i].member_count; j++) {
-            fprintf(fp, "%d//%s////0//0//\n",
-                    g_rooms[i].info.id,
-                    g_rooms[i].member_ids[j]);
+    for (i = 0; i < g_room_member_count; i++) {
+        RoomMemberRecord *m = &g_room_members[i];
+        /* 삭제된 방의 멤버는 저장 제외 */
+        int room_deleted = 0;
+        for (j = 0; j < g_room_count; j++) {
+            if (g_rooms[j].info.id == m->room_id) {
+                if (g_rooms[j].info.is_deleted) room_deleted = 1;
+                break;
+            }
         }
+        if (room_deleted) continue;
+        fprintf(fp, "%d//%s//%s//%d//%d//%s\n",
+                m->room_id, m->user_id, m->open_nick,
+                m->is_admin, m->is_muted, m->joined_at);
     }
     fclose(fp);
 }
@@ -289,6 +309,7 @@ int load_messages(const char *path) {
     if (!fp) return 0;
 
     g_next_msg_id = 1;
+    g_msg_count   = 0;
     while (fgets(line, sizeof(line), fp)) {
         if (line[0] == '\n' || line[0] == '\r' || line[0] == '\0') continue;
         n = split_line(line, fields, 10);
@@ -297,6 +318,23 @@ int load_messages(const char *path) {
         msg_id = atoi(fields[0]);
         if (msg_id >= g_next_msg_id)
             g_next_msg_id = msg_id + 1;
+
+        /* g_messages[] 에 채운다 (MAX_MSG_HISTORY 초과분은 ID 추적만 유지) */
+        if (n >= 10 && g_msg_count < MAX_MSG_HISTORY) {
+            MessageRecord *m = &g_messages[g_msg_count];
+            memset(m, 0, sizeof(*m));
+            m->id          = atoi(fields[0]);
+            m->room_id     = atoi(fields[1]);
+            strncpy(m->from_id,    fields[2], 20);
+            strncpy(m->to_id,      fields[3], 20);
+            m->reply_to_id = atoi(fields[4]);
+            m->msg_type    = atoi(fields[5]);
+            m->is_deleted  = atoi(fields[6]);
+            strncpy(m->created_at, fields[7], 19);
+            strncpy(m->edited_at,  fields[8], 19);
+            strncpy(m->content,    fields[9], MAX_PKT_SIZE - 1);
+            g_msg_count++;
+        }
         count++;
     }
     fclose(fp);
@@ -317,7 +355,7 @@ int load_friends(const char *path) {
     if (!fp) return 0;
 
     g_friend_count = 0;
-    while (fgets(line, sizeof(line), fp) && g_friend_count < MAX_CLIENTS * 4) {
+    while (fgets(line, sizeof(line), fp) && g_friend_count < MAX_FRIENDS) {
         if (line[0] == '\n' || line[0] == '\r' || line[0] == '\0') continue;
         n = split_line(line, fields, 5);
         if (n < 5) continue;
@@ -363,6 +401,291 @@ int append_friend(const char *path, const FriendRecord *f) {
             f->id, f->user_id, f->friend_id,
             f->status, f->created_at);
     fclose(fp);
+    return 0;
+}
+
+/* ---------------------------------------------------------------
+ * dm_reads.txt
+ * 포맷: msg_id//reader_id//read_at
+ * --------------------------------------------------------------- */
+int load_dm_reads(const char *path) {
+    FILE  *fp;
+    char   line[256];
+    char  *fields[4];
+    int    n;
+
+    fp = fopen(path, "r");
+    if (!fp) return 0;
+
+    g_dm_read_count = 0;
+    while (fgets(line, sizeof(line), fp) && g_dm_read_count < MAX_DM_READS) {
+        if (line[0] == '\n' || line[0] == '\r' || line[0] == '\0') continue;
+        n = split_line(line, fields, 3);
+        if (n < 3) continue;
+
+        DmReadRecord *r = &g_dm_reads[g_dm_read_count];
+        memset(r, 0, sizeof(*r));
+        r->msg_id = atoi(fields[0]);
+        strncpy(r->reader_id, fields[1], 20);
+        strncpy(r->read_at,   fields[2], 19);
+        g_dm_read_count++;
+    }
+    fclose(fp);
+    return g_dm_read_count;
+}
+
+/* 호출자는 g_file_mutex 를 보유해야 한다. */
+void save_dm_reads(const char *path) {
+    FILE *fp;
+    int   i;
+
+    /* MUTEX: g_file_mutex (caller) */
+    fp = fopen(path, "w");
+    if (!fp) return;
+
+    for (i = 0; i < g_dm_read_count; i++) {
+        DmReadRecord *r = &g_dm_reads[i];
+        fprintf(fp, "%d//%s//%s\n",
+                r->msg_id, r->reader_id, r->read_at);
+    }
+    fclose(fp);
+}
+
+/* 호출자는 g_file_mutex 를 보유해야 한다. */
+int append_dm_read(const char *path, const DmReadRecord *r) {
+    FILE *fp;
+
+    /* MUTEX: g_file_mutex (caller) */
+    fp = fopen(path, "a");
+    if (!fp) return -1;
+
+    fprintf(fp, "%d//%s//%s\n",
+            r->msg_id, r->reader_id, r->read_at);
+    fclose(fp);
+    return 0;
+}
+
+/* ---------------------------------------------------------------
+ * room_invites.txt
+ * 포맷: id//room_id//inviter_id//invitee_id//status//created_at
+ * --------------------------------------------------------------- */
+int load_room_invites(const char *path) {
+    FILE  *fp;
+    char   line[256];
+    char  *fields[7];
+    int    n;
+
+    fp = fopen(path, "r");
+    if (!fp) return 0;
+
+    g_room_invite_count = 0;
+    while (fgets(line, sizeof(line), fp) && g_room_invite_count < MAX_INVITES) {
+        if (line[0] == '\n' || line[0] == '\r' || line[0] == '\0') continue;
+        n = split_line(line, fields, 6);
+        if (n < 6) continue;
+
+        RoomInviteRecord *r = &g_room_invites[g_room_invite_count];
+        memset(r, 0, sizeof(*r));
+        r->id        = atoi(fields[0]);
+        r->room_id   = atoi(fields[1]);
+        strncpy(r->inviter_id, fields[2], 20);
+        strncpy(r->invitee_id, fields[3], 20);
+        r->status    = atoi(fields[4]);
+        strncpy(r->created_at, fields[5], 19);
+        g_room_invite_count++;
+    }
+    fclose(fp);
+    return g_room_invite_count;
+}
+
+/* 호출자는 g_file_mutex 를 보유해야 한다. */
+void save_room_invites(const char *path) {
+    FILE *fp;
+    int   i;
+
+    /* MUTEX: g_file_mutex (caller) */
+    fp = fopen(path, "w");
+    if (!fp) return;
+
+    for (i = 0; i < g_room_invite_count; i++) {
+        RoomInviteRecord *r = &g_room_invites[i];
+        fprintf(fp, "%d//%d//%s//%s//%d//%s\n",
+                r->id, r->room_id, r->inviter_id,
+                r->invitee_id, r->status, r->created_at);
+    }
+    fclose(fp);
+}
+
+/* 호출자는 g_file_mutex 를 보유해야 한다. */
+int append_room_invite(const char *path, const RoomInviteRecord *r) {
+    FILE *fp;
+
+    /* MUTEX: g_file_mutex (caller) */
+    fp = fopen(path, "a");
+    if (!fp) return -1;
+
+    fprintf(fp, "%d//%d//%s//%s//%d//%s\n",
+            r->id, r->room_id, r->inviter_id,
+            r->invitee_id, r->status, r->created_at);
+    fclose(fp);
+    return 0;
+}
+
+/* ---------------------------------------------------------------
+ * user_settings.txt
+ * 포맷: user_id//msg_color//nick_color//theme//ts_format//dnd//welcome_shown
+ * --------------------------------------------------------------- */
+int load_user_settings(const char *path) {
+    FILE  *fp;
+    char   line[256];
+    char  *fields[8];
+    int    n;
+
+    fp = fopen(path, "r");
+    if (!fp) return 0;
+
+    g_user_settings_count = 0;
+    while (fgets(line, sizeof(line), fp) && g_user_settings_count < MAX_USERS) {
+        if (line[0] == '\n' || line[0] == '\r' || line[0] == '\0') continue;
+        n = split_line(line, fields, 7);
+        if (n < 7) continue;
+
+        UserSettingsRecord *s = &g_user_settings[g_user_settings_count];
+        memset(s, 0, sizeof(*s));
+        strncpy(s->user_id,    fields[0], 20);
+        strncpy(s->msg_color,  fields[1], 15);
+        strncpy(s->nick_color, fields[2], 15);
+        strncpy(s->theme,      fields[3], 10);
+        s->ts_format     = atoi(fields[4]);
+        s->dnd           = atoi(fields[5]);
+        s->welcome_shown = atoi(fields[6]);
+        g_user_settings_count++;
+    }
+    fclose(fp);
+    return g_user_settings_count;
+}
+
+/* 호출자는 g_file_mutex 를 보유해야 한다. */
+void save_user_settings(const char *path) {
+    FILE *fp;
+    int   i;
+
+    /* MUTEX: g_file_mutex (caller) */
+    fp = fopen(path, "w");
+    if (!fp) return;
+
+    for (i = 0; i < g_user_settings_count; i++) {
+        UserSettingsRecord *s = &g_user_settings[i];
+        fprintf(fp, "%s//%s//%s//%s//%d//%d//%d\n",
+                s->user_id, s->msg_color, s->nick_color,
+                s->theme, s->ts_format, s->dnd, s->welcome_shown);
+    }
+    fclose(fp);
+}
+
+/* 호출자는 g_file_mutex 를 보유해야 한다.
+ * user_id 가 이미 존재하면 갱신, 없으면 append. */
+int upsert_user_settings(const char *path, const UserSettingsRecord *s) {
+    int i;
+
+    /* MUTEX: g_file_mutex (caller) */
+    for (i = 0; i < g_user_settings_count; i++) {
+        if (strcmp(g_user_settings[i].user_id, s->user_id) == 0) {
+            g_user_settings[i] = *s;
+            save_user_settings(path);
+            return 0;
+        }
+    }
+    /* 신규 */
+    if (g_user_settings_count < MAX_USERS) {
+        g_user_settings[g_user_settings_count++] = *s;
+    }
+    {
+        FILE *fp = fopen(path, "a");
+        if (!fp) return -1;
+        fprintf(fp, "%s//%s//%s//%s//%d//%d//%d\n",
+                s->user_id, s->msg_color, s->nick_color,
+                s->theme, s->ts_format, s->dnd, s->welcome_shown);
+        fclose(fp);
+    }
+    return 0;
+}
+
+/* ---------------------------------------------------------------
+ * room_reads.txt
+ * 포맷: room_id//user_id//last_read_msg_id//read_at
+ * --------------------------------------------------------------- */
+int load_room_reads(const char *path) {
+    FILE  *fp;
+    char   line[256];
+    char  *fields[5];
+    int    n;
+
+    fp = fopen(path, "r");
+    if (!fp) return 0;
+
+    g_room_read_count = 0;
+    while (fgets(line, sizeof(line), fp) && g_room_read_count < MAX_ROOM_READS) {
+        if (line[0] == '\n' || line[0] == '\r' || line[0] == '\0') continue;
+        n = split_line(line, fields, 4);
+        if (n < 4) continue;
+
+        RoomReadRecord *r = &g_room_reads[g_room_read_count];
+        memset(r, 0, sizeof(*r));
+        r->room_id          = atoi(fields[0]);
+        strncpy(r->user_id, fields[1], 20);
+        r->last_read_msg_id = atoi(fields[2]);
+        strncpy(r->read_at, fields[3], 19);
+        g_room_read_count++;
+    }
+    fclose(fp);
+    return g_room_read_count;
+}
+
+/* 호출자는 g_file_mutex 를 보유해야 한다. */
+void save_room_reads(const char *path) {
+    FILE *fp;
+    int   i;
+
+    /* MUTEX: g_file_mutex (caller) */
+    fp = fopen(path, "w");
+    if (!fp) return;
+
+    for (i = 0; i < g_room_read_count; i++) {
+        RoomReadRecord *r = &g_room_reads[i];
+        fprintf(fp, "%d//%s//%d//%s\n",
+                r->room_id, r->user_id,
+                r->last_read_msg_id, r->read_at);
+    }
+    fclose(fp);
+}
+
+/* 호출자는 g_file_mutex 를 보유해야 한다.
+ * room_id + user_id 조합이 존재하면 갱신, 없으면 신규 추가 후 파일 재작성. */
+int update_room_read(const char *path, int room_id, const char *user_id,
+                     int msg_id, const char *read_at) {
+    int i;
+
+    /* MUTEX: g_file_mutex (caller) */
+    for (i = 0; i < g_room_read_count; i++) {
+        if (g_room_reads[i].room_id == room_id &&
+            strcmp(g_room_reads[i].user_id, user_id) == 0) {
+            g_room_reads[i].last_read_msg_id = msg_id;
+            strncpy(g_room_reads[i].read_at, read_at, 19);
+            save_room_reads(path);
+            return 0;
+        }
+    }
+    /* 신규 항목 */
+    if (g_room_read_count < MAX_ROOM_READS) {
+        RoomReadRecord *r = &g_room_reads[g_room_read_count++];
+        memset(r, 0, sizeof(*r));
+        r->room_id          = room_id;
+        strncpy(r->user_id, user_id, 20);
+        r->last_read_msg_id = msg_id;
+        strncpy(r->read_at, read_at, 19);
+    }
+    save_room_reads(path);
     return 0;
 }
 

@@ -23,6 +23,11 @@ static void handle_login(ClientSession *sess, char *payload) {
         send_packet(sess->sock, LOGIN_RES "|%d", LOGIN_WRONG_ID);
         return;
     }
+    /* 금지문자 검사 */
+    if (has_forbidden_char(user_id)) {
+        send_packet(sess->sock, LOGIN_RES "|%d", LOGIN_WRONG_ID);
+        return;
+    }
     /* 트레일링 공백 제거 */
     n = (int)strlen(pw_hash);
     while (n > 0 && (pw_hash[n-1] == '\r' || pw_hash[n-1] == '\n'))
@@ -57,6 +62,26 @@ static void handle_login(ClientSession *sess, char *payload) {
     u->online_status = STATUS_ONLINE;
     send_packet(sess->sock, LOGIN_RES "|%d", LOGIN_OK);
     notify_friend_status_change(user_id, STATUS_ONLINE);
+
+    /* 대기 중인 친구 요청 알림 전송 */
+    {
+        int pi;
+        for (pi = 0; pi < g_friend_count; pi++) {
+            if (g_friends[pi].status == FRIEND_PENDING &&
+                strcmp(g_friends[pi].friend_id, user_id) == 0) {
+                char req_nick[21];
+                char fbuf[256];
+                int  flen;
+                get_nickname(g_friends[pi].user_id, req_nick);
+                flen = snprintf(fbuf, sizeof(fbuf) - 2,
+                                FRIEND_REQUEST_NOTIFY "|%s:%s",
+                                g_friends[pi].user_id, req_nick);
+                fbuf[flen++] = '\n'; fbuf[flen] = '\0';
+                send(sess->sock, fbuf, flen, 0);
+            }
+        }
+    }
+
     printf("[서버] 로그인: %s (%s)\n", u->nickname, user_id);
 }
 
@@ -81,6 +106,17 @@ static void handle_register(ClientSession *sess, char *payload) {
         return;
     }
 
+    /* 금지문자 검사 (40-security.md 준수) */
+    if (has_forbidden_char(user_id) || has_forbidden_char(nickname)) {
+        send_packet(sess->sock, REGISTER_RES "|%d", REGISTER_ERROR);
+        return;
+    }
+    /* pw_hash는 64자 hex여야 함 */
+    if (strlen(pw_hash) != 64) {
+        send_packet(sess->sock, REGISTER_RES "|%d", REGISTER_ERROR);
+        return;
+    }
+
     /* 중복 검사 (ID 및 닉네임) */
     for (i = 0; i < g_user_count; i++) {
         if (strcmp(g_users[i].id_str,   user_id)  == 0 ||
@@ -92,7 +128,7 @@ static void handle_register(ClientSession *sess, char *payload) {
 
     /* MUTEX: g_sessions_mutex */
     WaitForSingleObject(g_sessions_mutex, INFINITE);
-    if (g_user_count >= MAX_CLIENTS) {
+    if (g_user_count >= MAX_USERS) {
         ReleaseMutex(g_sessions_mutex);
         send_packet(sess->sock, REGISTER_RES "|%d", REGISTER_ERROR);
         return;
