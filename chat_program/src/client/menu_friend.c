@@ -45,6 +45,7 @@ void ShowFriendMenu(void) {
         printf("  c. 요청 거절\n");
         printf("  d. 친구 삭제\n");
         printf("  e. 차단\n");
+        printf("  f. 유저 검색\n");
         printf("  0. 돌아가기\n");
         printf("선택> ");
         fflush(stdout);
@@ -126,6 +127,19 @@ void ShowFriendMenu(void) {
             send_packet(g_state.sock, "%s|%s",
                         FRIEND_BLOCK, g_friend_list[idx - 1].id);
             printf("[차단] %s\n", g_friend_list[idx - 1].nick);
+        }
+        else if (ch[0] == 'f') {
+            /* 유저 검색 */
+            printf("검색할 닉네임 또는 ID: ");
+            fflush(stdout);
+            char keyword[21];
+            if (!fgets(keyword, (int)sizeof(keyword), stdin)) continue;
+            n = (int)strlen(keyword);
+            if (n > 0 && keyword[n - 1] == '\n') keyword[--n] = '\0';
+            if (keyword[0] == '\0') continue;
+            g_state.response_received = 0;
+            send_packet(g_state.sock, "%s|%s", USER_SEARCH_REQ, keyword);
+            wait_response(5000);
         }
 
         if (!g_state.logged_in || !g_state.connected) break;

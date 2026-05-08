@@ -10,10 +10,22 @@ RoomInfo      g_rooms[MAX_ROOMS];
 int           g_room_count    = 0;
 
 /* === 파일 영속 캐시 === */
-UserRecord   g_users[MAX_CLIENTS];
+UserRecord   g_users[MAX_USERS];
 int          g_user_count   = 0;
-FriendRecord g_friends[MAX_CLIENTS * 4];
+FriendRecord g_friends[MAX_FRIENDS];
 int          g_friend_count = 0;
+MessageRecord      g_messages[MAX_MSG_HISTORY];
+int                g_msg_count           = 0;
+RoomMemberRecord   g_room_members[MAX_ROOM_MEMBER_RECORDS];
+int                g_room_member_count   = 0;
+DmReadRecord       g_dm_reads[MAX_DM_READS];
+int                g_dm_read_count       = 0;
+RoomInviteRecord   g_room_invites[MAX_INVITES];
+int                g_room_invite_count   = 0;
+UserSettingsRecord g_user_settings[MAX_USERS];
+int                g_user_settings_count = 0;
+RoomReadRecord     g_room_reads[MAX_ROOM_READS];
+int                g_room_read_count     = 0;
 
 /* === 단조 증가 ID === */
 int g_next_user_id   = 1;
@@ -52,8 +64,12 @@ void restore_next_ids(void) {
             g_next_friend_id = g_friends[i].id + 1;
     }
 
-    /* invite: T7 에서 로드하므로 여기서는 1로 초기화 */
+    /* invite: g_room_invites 에서 최대값 복원 */
     g_next_invite_id = 1;
+    for (i = 0; i < g_room_invite_count; i++) {
+        if (g_room_invites[i].id >= g_next_invite_id)
+            g_next_invite_id = g_room_invites[i].id + 1;
+    }
 }
 
 UserRecord *find_user_by_id(const char *user_id) {
@@ -83,4 +99,40 @@ int find_room_idx(int room_id) {
             return i;
     }
     return -1;
+}
+
+int count_user_messages(const char *user_id) {
+    int i, n = 0;
+    for (i = 0; i < g_msg_count; i++) {
+        if (!g_messages[i].is_deleted &&
+            strcmp(g_messages[i].from_id, user_id) == 0)
+            n++;
+    }
+    return n;
+}
+
+int count_user_rooms(const char *user_id) {
+    int i, j, n = 0;
+    for (i = 0; i < g_room_member_count; i++) {
+        if (strcmp(g_room_members[i].user_id, user_id) != 0) continue;
+        for (j = 0; j < g_room_count; j++) {
+            if (g_rooms[j].info.id == g_room_members[i].room_id &&
+                !g_rooms[j].info.is_deleted) {
+                n++;
+                break;
+            }
+        }
+    }
+    return n;
+}
+
+int count_user_friends(const char *user_id) {
+    int i, n = 0;
+    for (i = 0; i < g_friend_count; i++) {
+        if (g_friends[i].status == FRIEND_ACCEPTED &&
+            (strcmp(g_friends[i].user_id,   user_id) == 0 ||
+             strcmp(g_friends[i].friend_id, user_id) == 0))
+            n++;
+    }
+    return n;
 }

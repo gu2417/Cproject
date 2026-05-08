@@ -27,7 +27,7 @@ typedef struct {
     int    is_open;
     char   owner_id[21];
     char   topic[101];
-    char   notice[201];
+    char   notice[256];
     int    pinned_msg_id;
     char   created_at[20];
     int    max_members;
@@ -76,8 +76,8 @@ typedef struct {
     int    room_id;
     char   inviter_id[21];
     char   invitee_id[21];
-    char   created_at[20];
     int    status;             /* 0=pending, 1=accepted, 2=rejected */
+    char   created_at[20];
 } RoomInviteRecord;
 
 typedef struct {
@@ -94,6 +94,7 @@ typedef struct {
     int    room_id;
     char   user_id[21];
     int    last_read_msg_id;
+    char   read_at[20];
 } RoomReadRecord;
 
 /* =========================================================
@@ -109,6 +110,11 @@ typedef struct {
     int    room_id;
     char   addr_str[46];
     time_t last_recv;          /* PING/PONG 60초 체크 */
+    int    dnd;
+    int    muted_rooms[32];
+    int    muted_count;
+    int    is_admin;
+    HANDLE hThread;
 } ClientSession;
 
 /* =========================================================
@@ -118,6 +124,7 @@ typedef struct {
 typedef struct {
     RoomRecord  info;
     char        member_ids[MAX_ROOM_MEMBERS][21];
+    int         admin_flags[MAX_ROOM_MEMBERS];
     int         member_count;
 } RoomInfo;
 

@@ -45,9 +45,13 @@ int main(void) {
     load_room_members(FILE_ROOM_MEMBERS);
     load_friends(FILE_FRIENDS);
     load_messages(FILE_MESSAGES);
+    load_dm_reads(FILE_DM_READS);
+    load_room_invites(FILE_ROOM_INVITES);
+    load_user_settings(FILE_USER_SETTINGS);
+    load_room_reads(FILE_ROOM_READS);
     restore_next_ids();
-    printf("[서버] 로드 완료: 유저=%d, 방=%d, 다음msg_id=%d\n",
-           g_user_count, g_room_count, g_next_msg_id);
+    printf("[서버] 로드 완료: 유저=%d, 방=%d, 친구=%d, 초대=%d\n",
+           g_user_count, g_room_count, g_friend_count, g_room_invite_count);
 
     /* Listen 소켓 생성 */
     listen_sock = socket(PF_INET, SOCK_STREAM, 0);

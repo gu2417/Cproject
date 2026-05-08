@@ -10,6 +10,12 @@
 #define MAX_ROOMS         100
 #define MAX_ROOM_MEMBERS  64
 #define MAX_MSG_HISTORY   1000
+#define MAX_USERS               1000
+#define MAX_FRIENDS             5000
+#define MAX_ROOM_MEMBER_RECORDS 6400
+#define MAX_DM_READS            10000
+#define MAX_INVITES             1000
+#define MAX_ROOM_READS          6400
 
 /* =========================================================
  * 파일 경로 상수
@@ -75,6 +81,13 @@
 #define ROOM_MUTE           "ROOM_MUTE"
 #define ROOM_PIN            "ROOM_PIN"
 #define ROOM_SEARCH         "ROOM_SEARCH"
+#define ROOM_SEARCH_RES         "ROOM_SEARCH_RES"
+#define ROOM_MEMBERS_REQ        "ROOM_MEMBERS_REQ"
+#define ROOM_MEMBERS_RES        "ROOM_MEMBERS_RES"
+#define ROOM_DELETE             "ROOM_DELETE"
+#define ROOM_DELETED_NOTIFY     "ROOM_DELETED_NOTIFY"
+#define ROOM_MUTE_TOGGLE        "ROOM_MUTE_TOGGLE"
+#define ROOM_MUTE_TOGGLE_RES    "ROOM_MUTE_TOGGLE_RES"
 
 /* =========================================================
  * 패킷 타입 — 메시지
@@ -87,6 +100,7 @@
 #define MSG_SEARCH          "MSG_SEARCH"
 #define MSG_SEARCH_RES      "MSG_SEARCH_RES"
 #define MSG_PIN_NOTIFY      "MSG_PIN_NOTIFY"
+#define MSG_PIN             "MSG_PIN"
 
 /* =========================================================
  * 패킷 타입 — DM
@@ -115,6 +129,7 @@
 #define FRIEND_STATUS_CHANGE    "FRIEND_STATUS_CHANGE"
 #define USER_SEARCH_REQ         "USER_SEARCH_REQ"
 #define USER_SEARCH_RES         "USER_SEARCH_RES"
+#define USER_SEARCH             USER_SEARCH_REQ
 
 /* =========================================================
  * 패킷 타입 — 마이페이지
@@ -138,6 +153,9 @@
 #define NOTIFY              "NOTIFY"
 #define TYPING_START        "TYPING_START"
 #define TYPING_NOTIFY       "TYPING_NOTIFY"
+#define TYPING_STOP         "TYPING_STOP"
+#define WHISPER             "WHISPER"
+#define WHISPER_RECV        "WHISPER_RECV"
 #define PING                "PING"
 #define PONG                "PONG"
 #define ERROR_PKT           "ERROR"
@@ -194,3 +212,17 @@
 #define FRIEND_PENDING    0
 #define FRIEND_ACCEPTED   1
 #define FRIEND_BLOCKED_S  2
+
+/* ROOM_INVITE_RES */
+#define ROOM_INVITE_SENT        0
+#define ROOM_INVITE_NOT_FOUND   1
+#define ROOM_INVITE_ALREADY     2
+#define ROOM_INVITE_FULL        3
+
+/* PROFILE_UPDATE_RES */
+#define PROFILE_OK              0
+#define PROFILE_DUP_NICK        1
+
+/* PASS_CHANGE_RES */
+#define PASS_OK                 0
+#define PASS_WRONG_PW           1

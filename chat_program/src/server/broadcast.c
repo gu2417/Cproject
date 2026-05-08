@@ -53,20 +53,31 @@ void broadcast_to_all(const char *msg) {
 }
 
 /* ---------------------------------------------------------------
- * broadcast_to_room: 특정 room_id 에 속한 세션에만 msg 를 전송한다.
+ * broadcast_to_room: room_id 방의 모든 멤버(온라인)에게 msg 를 전송한다.
+ * 멤버가 현재 방 뷰에 있든 메인 메뉴에 있든 관계없이 전송하여
+ * 클라이언트가 상황에 따라 인라인 표시 또는 알림으로 처리한다.
  * MUTEX: g_sessions_mutex
  * --------------------------------------------------------------- */
 void broadcast_to_room(int room_id, const char *msg) {
-    int i;
+    int i, j;
     int len = (int)strlen(msg);
 
     /* MUTEX: g_sessions_mutex */
     WaitForSingleObject(g_sessions_mutex, INFINITE);
-    for (i = 0; i < MAX_CLIENTS; i++) {
-        if (g_sessions[i].active &&
-            g_sessions[i].sock != INVALID_SOCKET &&
-            g_sessions[i].room_id == room_id) {
-            send(g_sessions[i].sock, msg, len, 0);
+    int ri = find_room_idx(room_id);
+    if (ri < 0) {
+        ReleaseMutex(g_sessions_mutex);
+        return;
+    }
+    for (i = 0; i < g_rooms[ri].member_count; i++) {
+        const char *mid = g_rooms[ri].member_ids[i];
+        for (j = 0; j < MAX_CLIENTS; j++) {
+            if (g_sessions[j].active &&
+                g_sessions[j].sock != INVALID_SOCKET &&
+                strcmp(g_sessions[j].user_id, mid) == 0) {
+                send(g_sessions[j].sock, msg, len, 0);
+                break;
+            }
         }
     }
     ReleaseMutex(g_sessions_mutex);

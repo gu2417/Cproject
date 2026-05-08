@@ -6,6 +6,7 @@
 #include "../common/utils.h"
 #include "state.h"
 #include "net.h"
+#include "menu_initial.h"
 #include "menu_main.h"
 #include "menu_chat.h"
 #include "menu_friend.h"
@@ -30,6 +31,7 @@ void ShowRoomMenu(int is_open) {
 
         printf("\n  1. 방 입장\n");
         printf("  2. 방 생성\n");
+        printf("  3. 방 검색\n");
         printf("  0. 돌아가기\n");
         printf("선택> ");
         fflush(stdout);
@@ -39,7 +41,20 @@ void ShowRoomMenu(int is_open) {
 
         if (ch[0] == '0') break;
 
-        if (ch[0] == '1') {
+        if (ch[0] == '3') {
+            /* ── 방 검색 ── */
+            char keyword[51] = "";
+            printf("검색어: ");
+            fflush(stdout);
+            if (!fgets(keyword, (int)sizeof(keyword), stdin)) continue;
+            int kn = (int)strlen(keyword);
+            if (kn > 0 && keyword[kn-1] == '\n') keyword[--kn] = '\0';
+            if (keyword[0] == '\0') continue;
+            g_state.response_received = 0;
+            send_packet(g_state.sock, "%s|%s", ROOM_SEARCH, keyword);
+            wait_response(5000);
+        }
+        else if (ch[0] == '1') {
             /* ── 방 입장 ── */
             printf("방 ID: ");
             fflush(stdout);
@@ -51,10 +66,7 @@ void ShowRoomMenu(int is_open) {
             char plain_pw[11] = "";
             printf("비밀번호 (없으면 Enter): ");
             fflush(stdout);
-            if (!fgets(plain_pw, (int)sizeof(plain_pw), stdin))
-                plain_pw[0] = '\0';
-            int n = (int)strlen(plain_pw);
-            if (n > 0 && plain_pw[n-1] == '\n') plain_pw[--n] = '\0';
+            read_password(plain_pw, (int)sizeof(plain_pw));
 
             if (plain_pw[0] != '\0') {
                 char pw_hash[65];
@@ -95,10 +107,7 @@ void ShowRoomMenu(int is_open) {
 
             printf("비밀번호 (없으면 Enter, 최대 10자): ");
             fflush(stdout);
-            if (!fgets(plain_pw, (int)sizeof(plain_pw), stdin))
-                plain_pw[0] = '\0';
-            n = (int)strlen(plain_pw);
-            if (n > 0 && plain_pw[n-1] == '\n') plain_pw[--n] = '\0';
+            read_password(plain_pw, (int)sizeof(plain_pw));
 
             g_state.response_received = 0;
             if (plain_pw[0] != '\0') {
@@ -143,7 +152,8 @@ void ShowMainMenu(void) {
         printf("  4. DM\n");
         printf("  5. 마이페이지\n");
         printf("  6. 설정\n");
-        printf("  7. 로그아웃\n");
+        printf("  7. 내 방 목록\n");
+        printf("  8. 로그아웃\n");
         printf("선택> ");
         fflush(stdout);
 
@@ -157,6 +167,11 @@ void ShowMainMenu(void) {
             case '5': ShowMyPageMenu();   break;
             case '6': ShowSettingsMenu(); break;
             case '7':
+                g_state.response_received = 0;
+                send_packet(g_state.sock, "%s|", MY_ROOMS_REQ);
+                wait_response(5000);
+                break;
+            case '8':
                 send_packet(g_state.sock, "%s|", LOGOUT_REQ);
                 printf("로그아웃합니다.\n");
                 return;

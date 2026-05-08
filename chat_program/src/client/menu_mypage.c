@@ -6,6 +6,7 @@
 #include "../common/utils.h"
 #include "state.h"
 #include "net.h"
+#include "menu_initial.h"
 #include "menu_mypage.h"
 
 void ShowMyPageMenu(void) {
@@ -19,6 +20,7 @@ void ShowMyPageMenu(void) {
         printf("\n  1. 닉네임 / 상태메시지 수정\n");
         printf("  2. 비밀번호 변경\n");
         printf("  3. 온라인 상태 변경\n");
+        printf("  4. 내 방 목록\n");
         printf("  0. 돌아가기\n");
         printf("선택> ");
         fflush(stdout);
@@ -74,16 +76,13 @@ void ShowMyPageMenu(void) {
 
             printf("현재 비밀번호: ");
             fflush(stdout);
-            if (!fgets(old_plain, (int)sizeof(old_plain), stdin)) continue;
-            n = (int)strlen(old_plain);
-            if (n > 0 && old_plain[n - 1] == '\n') old_plain[--n] = '\0';
+            read_password(old_plain, (int)sizeof(old_plain));
             if (old_plain[0] == '\0') continue;
 
             printf("새 비밀번호 (1~19자): ");
             fflush(stdout);
-            if (!fgets(new_plain, (int)sizeof(new_plain), stdin)) continue;
+            read_password(new_plain, (int)sizeof(new_plain));
             n = (int)strlen(new_plain);
-            if (n > 0 && new_plain[n - 1] == '\n') new_plain[--n] = '\0';
             if (n < 1 || n > 19) {
                 printf("[오류] 비밀번호는 1~19자여야 합니다.\n");
                 continue;
@@ -120,6 +119,12 @@ void ShowMyPageMenu(void) {
             send_packet(g_state.sock, "%s|%d", STATUS_CHANGE, new_status);
             g_state.online_status = new_status;
             printf("[상태 변경 완료]\n");
+        }
+        else if (ch[0] == '4') {
+            /* 내 방 목록 — MY_ROOMS_RES 핸들러가 출력 */
+            g_state.response_received = 0;
+            send_packet(g_state.sock, "%s|", MY_ROOMS_REQ);
+            wait_response(5000);
         }
 
         if (!g_state.logged_in || !g_state.connected) break;

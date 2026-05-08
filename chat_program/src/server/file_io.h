@@ -40,3 +40,37 @@ int  append_message(const char *path, const MessageRecord *m);
 int  load_friends(const char *path);
 void save_friends(const char *path);
 int  append_friend(const char *path, const FriendRecord *f);
+
+/* =========================================================
+ * dm_reads.txt  포맷:
+ * msg_id//reader_id//read_at
+ * ========================================================= */
+int  load_dm_reads(const char *path);
+void save_dm_reads(const char *path);
+int  append_dm_read(const char *path, const DmReadRecord *r);
+
+/* =========================================================
+ * room_invites.txt  포맷:
+ * id//room_id//inviter_id//invitee_id//status//created_at
+ * ========================================================= */
+int  load_room_invites(const char *path);
+void save_room_invites(const char *path);
+int  append_room_invite(const char *path, const RoomInviteRecord *r);
+
+/* =========================================================
+ * user_settings.txt  포맷:
+ * user_id//msg_color//nick_color//theme//ts_format//dnd//welcome_shown
+ * ========================================================= */
+int  load_user_settings(const char *path);
+void save_user_settings(const char *path);
+int  upsert_user_settings(const char *path, const UserSettingsRecord *s);
+
+/* =========================================================
+ * room_reads.txt  포맷:
+ * room_id//user_id//last_read_msg_id//read_at
+ * ========================================================= */
+int  load_room_reads(const char *path);
+void save_room_reads(const char *path);
+int  update_room_read(const char *path, int room_id,
+                      const char *user_id, int msg_id,
+                      const char *read_at);

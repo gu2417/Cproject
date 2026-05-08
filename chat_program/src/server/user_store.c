@@ -71,14 +71,19 @@ void notify_friend_status_change(const char *user_id, int new_status) {
     ReleaseMutex(g_sessions_mutex);
 }
 
-/* MYPAGE_REQ| → MYPAGE_RES|nickname:status_msg:online_status:created_at */
+/* MYPAGE_REQ| → MYPAGE_RES|id:nickname:created_at:last_seen:msg_count:room_count:friend_count:status_msg */
 static void handle_mypage(ClientSession *sess, char *payload) {
     (void)payload;
     if (sess->user_id[0] == '\0') return;
     UserRecord *u = find_user_by_id(sess->user_id);
     if (!u) return;
-    send_packet(sess->sock, MYPAGE_RES "|%s:%s:%d:%s",
-                u->nickname, u->status_msg, u->online_status, u->created_at);
+    /* content-last 규칙: status_msg 가 마지막 필드 */
+    send_packet(sess->sock, MYPAGE_RES "|%s:%s:%s:%s:%d:%d:%d:%s",
+                u->id_str, u->nickname, u->created_at, u->last_seen,
+                count_user_messages(sess->user_id),
+                count_user_rooms(sess->user_id),
+                count_user_friends(sess->user_id),
+                u->status_msg);
 }
 
 /* MY_ROOMS_REQ| → MY_ROOMS_RES|room_id:name;room_id:name;... */
@@ -173,15 +178,69 @@ static void handle_status_change(ClientSession *sess, char *payload) {
 static void handle_settings_req(ClientSession *sess, char *payload) {
     (void)payload;
     if (sess->user_id[0] == '\0') return;
-    /* P0: 기본값 반환 */
+
+    int i;
+    for (i = 0; i < g_user_settings_count; i++) {
+        if (strcmp(g_user_settings[i].user_id, sess->user_id) == 0) {
+            send_packet(sess->sock, SETTINGS_RES "|%s:%s:%s:%d:%d",
+                        g_user_settings[i].msg_color,
+                        g_user_settings[i].nick_color,
+                        g_user_settings[i].theme,
+                        g_user_settings[i].ts_format,
+                        g_user_settings[i].dnd);
+            return;
+        }
+    }
+    /* 저장된 설정 없음: 기본값 */
     send_packet(sess->sock, SETTINGS_RES "|cyan:yellow:dark:0:0");
 }
 
 /* SETTINGS_UPDATE|msg_color:nick_color:theme:ts_format:dnd → SETTINGS_UPDATE_RES|0 */
 static void handle_settings_update(ClientSession *sess, char *payload) {
-    (void)payload;
     if (sess->user_id[0] == '\0') return;
-    /* P0: 수신만 하고 확인 응답 */
+
+    char *msg_color  = strtok(payload, ":");
+    char *nick_color = strtok(NULL,    ":");
+    char *theme      = strtok(NULL,    ":");
+    char *ts_fmt_s   = strtok(NULL,    ":");
+    char *dnd_s      = strtok(NULL,    "");
+    if (!msg_color || !nick_color || !theme || !ts_fmt_s || !dnd_s) {
+        send_packet(sess->sock, SETTINGS_UPDATE_RES "|1");
+        return;
+    }
+
+    int n = (int)strlen(dnd_s);
+    while (n > 0 && (dnd_s[n-1] == '\r' || dnd_s[n-1] == '\n'))
+        dnd_s[--n] = '\0';
+
+    UserSettingsRecord s;
+    memset(&s, 0, sizeof(s));
+    strncpy(s.user_id,    sess->user_id, 20);
+    strncpy(s.msg_color,  msg_color,     15);
+    strncpy(s.nick_color, nick_color,    15);
+    strncpy(s.theme,      theme,         10);
+    s.ts_format = atoi(ts_fmt_s);
+    s.dnd       = atoi(dnd_s);
+
+    /* welcome_shown 은 기존 값 유지 */
+    int i;
+    for (i = 0; i < g_user_settings_count; i++) {
+        if (strcmp(g_user_settings[i].user_id, sess->user_id) == 0) {
+            s.welcome_shown = g_user_settings[i].welcome_shown;
+            break;
+        }
+    }
+
+    /* MUTEX: g_file_mutex */
+    WaitForSingleObject(g_file_mutex, INFINITE);
+    upsert_user_settings(FILE_USER_SETTINGS, &s);
+    ReleaseMutex(g_file_mutex);
+
+    /* 세션의 dnd 상태 갱신 — MUTEX: g_sessions_mutex */
+    WaitForSingleObject(g_sessions_mutex, INFINITE);
+    sess->dnd = s.dnd;
+    ReleaseMutex(g_sessions_mutex);
+
     send_packet(sess->sock, SETTINGS_UPDATE_RES "|0");
 }
 

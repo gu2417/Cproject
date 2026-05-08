@@ -1,16 +1,25 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1778081929447,
-  "projectRoot": "/mnt/c/Project/Cproject",
+  "lastScanned": 1778242000193,
+  "projectRoot": "/Users/wovlf/Project/Cproject",
   "techStack": {
-    "languages": [],
+    "languages": [
+      {
+        "name": "C/C++",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "Makefile"
+        ]
+      }
+    ],
     "frameworks": [],
     "packageManager": null,
     "runtime": null
   },
   "build": {
-    "buildCommand": null,
-    "testCommand": null,
+    "buildCommand": "make build",
+    "testCommand": "make test",
     "lintCommand": null,
     "devCommand": null,
     "scripts": {}
@@ -24,7 +33,9 @@
   "structure": {
     "isMonorepo": false,
     "workspaces": [],
-    "mainDirectories": [],
+    "mainDirectories": [
+      "docs"
+    ],
     "gitBranches": {
       "defaultBranch": "main",
       "branchingStrategy": null
@@ -32,316 +43,350 @@
   },
   "customNotes": [],
   "directoryMap": {
+    "chat_program": {
+      "path": "chat_program",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1778242000181,
+      "keyFiles": [
+        "Makefile"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 1,
+      "lastAccessed": 1778242000181,
+      "keyFiles": [
+        "README.md"
+      ]
+    },
     "reference": {
       "path": "reference",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1778081929422,
+      "lastAccessed": 1778242000181,
       "keyFiles": [
         "client_main.c",
         "server_main.c"
+      ]
+    },
+    "chat_program/src": {
+      "path": "chat_program/src",
+      "purpose": "Source code",
+      "fileCount": 0,
+      "lastAccessed": 1778242000181,
+      "keyFiles": []
+    },
+    "docs/build": {
+      "path": "docs/build",
+      "purpose": "Build output",
+      "fileCount": 1,
+      "lastAccessed": 1778242000182,
+      "keyFiles": [
+        "build_guide.md"
       ]
     }
   },
   "hotPaths": [
     {
-      "path": "docs/README.md",
-      "accessCount": 9,
-      "lastAccessed": 1778158956579,
+      "path": "chat_program/src/server/room.c",
+      "accessCount": 34,
+      "lastAccessed": 1778246961891,
       "type": "file"
     },
     {
-      "path": "docs/features/FR_M_message.md",
+      "path": "chat_program/src/server/file_io.c",
+      "accessCount": 24,
+      "lastAccessed": 1778246482112,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/common/protocol.h",
+      "accessCount": 21,
+      "lastAccessed": 1778246152190,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/common/types.h",
+      "accessCount": 19,
+      "lastAccessed": 1778246048280,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/server/dm.c",
+      "accessCount": 19,
+      "lastAccessed": 1778246980636,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/client/packet.c",
+      "accessCount": 18,
+      "lastAccessed": 1778246873242,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/server/message.c",
+      "accessCount": 18,
+      "lastAccessed": 1778246952900,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/server/auth.c",
+      "accessCount": 17,
+      "lastAccessed": 1778246473073,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/client/menu_main.c",
+      "accessCount": 13,
+      "lastAccessed": 1778244846676,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/server/friend.c",
+      "accessCount": 13,
+      "lastAccessed": 1778246619664,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/server/user_store.c",
+      "accessCount": 12,
+      "lastAccessed": 1778245570657,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/server/globals.h",
+      "accessCount": 12,
+      "lastAccessed": 1778246042053,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/client/menu_chat.c",
+      "accessCount": 10,
+      "lastAccessed": 1778245198224,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/server/globals.c",
+      "accessCount": 10,
+      "lastAccessed": 1778245597514,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/server/file_io.h",
+      "accessCount": 7,
+      "lastAccessed": 1778243972719,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/server/broadcast.c",
+      "accessCount": 7,
+      "lastAccessed": 1778245597686,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/client/menu_initial.c",
       "accessCount": 5,
-      "lastAccessed": 1778158745383,
+      "lastAccessed": 1778243485389,
       "type": "file"
     },
     {
-      "path": "docs/uiux/console_ui_design.md",
+      "path": "chat_program/src/server/main.c",
+      "accessCount": 5,
+      "lastAccessed": 1778245597141,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/client/menu_initial.h",
       "accessCount": 4,
-      "lastAccessed": 1778157806610,
+      "lastAccessed": 1778243485961,
       "type": "file"
     },
     {
-      "path": "requirements.md",
+      "path": "chat_program/src/client/menu_friend.c",
       "accessCount": 4,
-      "lastAccessed": 1778158256651,
+      "lastAccessed": 1778244860868,
       "type": "file"
     },
     {
-      "path": "docs/features/FR_D_dm.md",
-      "accessCount": 4,
-      "lastAccessed": 1778158531662,
-      "type": "file"
-    },
-    {
-      "path": "docs/features/FR_G_group_chat.md",
-      "accessCount": 4,
-      "lastAccessed": 1778158651611,
-      "type": "file"
-    },
-    {
-      "path": "docs/features/FR_F_friend.md",
-      "accessCount": 4,
-      "lastAccessed": 1778158712756,
-      "type": "file"
-    },
-    {
-      "path": "docs/uiux/menu_flow.md",
+      "path": "chat_program/src/server/broadcast.h",
       "accessCount": 3,
-      "lastAccessed": 1778157806993,
+      "lastAccessed": 1778244465998,
       "type": "file"
     },
     {
-      "path": "docs/uiux/screen_inventory.md",
+      "path": "chat_program/src/client/packet.h",
       "accessCount": 3,
-      "lastAccessed": 1778157807369,
+      "lastAccessed": 1778244786405,
       "type": "file"
     },
     {
-      "path": "docs/security/input_validation.md",
+      "path": "chat_program/src/server/router.c",
       "accessCount": 3,
-      "lastAccessed": 1778158779918,
+      "lastAccessed": 1778245561312,
       "type": "file"
     },
     {
-      "path": "reference/server_main.c",
+      "path": "chat_program/src/server/client_handler.c",
+      "accessCount": 3,
+      "lastAccessed": 1778245579333,
+      "type": "file"
+    },
+    {
+      "path": "chat_program/src/server/router.h",
       "accessCount": 2,
-      "lastAccessed": 1778082236347,
+      "lastAccessed": 1778242190675,
       "type": "file"
     },
     {
-      "path": "reference/client_main.c",
+      "path": "docs/database/in_memory_structures.md",
       "accessCount": 2,
-      "lastAccessed": 1778082236571,
+      "lastAccessed": 1778242203530,
       "type": "file"
     },
     {
-      "path": "docs/features/FR_A_account.md",
+      "path": "chat_program/src/server/config.h",
       "accessCount": 2,
-      "lastAccessed": 1778157805066,
+      "lastAccessed": 1778242209947,
       "type": "file"
     },
     {
-      "path": "docs/features/FR_O_open_chat.md",
+      "path": "chat_program/src/server/user_store.h",
       "accessCount": 2,
-      "lastAccessed": 1778157806556,
+      "lastAccessed": 1778244450977,
       "type": "file"
     },
     {
-      "path": "docs/features/FR_N_notification.md",
+      "path": "chat_program/src/client/menu_dm.c",
       "accessCount": 2,
-      "lastAccessed": 1778157807714,
+      "lastAccessed": 1778244782347,
       "type": "file"
     },
     {
-      "path": "docs/features/FR_C_customization.md",
+      "path": "chat_program/src/client/state.h",
       "accessCount": 2,
-      "lastAccessed": 1778157807806,
+      "lastAccessed": 1778244801492,
       "type": "file"
     },
     {
-      "path": "docs/uiux/dialogs_and_actions.md",
-      "accessCount": 2,
-      "lastAccessed": 1778157808122,
-      "type": "file"
-    },
-    {
-      "path": "docs/uiux/help_and_guides.md",
-      "accessCount": 2,
-      "lastAccessed": 1778157808519,
-      "type": "file"
-    },
-    {
-      "path": "docs/uiux/error_and_recovery.md",
-      "accessCount": 2,
-      "lastAccessed": 1778157814550,
-      "type": "file"
-    },
-    {
-      "path": "docs/uiux/notification_patterns.md",
-      "accessCount": 2,
-      "lastAccessed": 1778157809223,
-      "type": "file"
-    },
-    {
-      "path": "docs/security/security_overview.md",
-      "accessCount": 2,
-      "lastAccessed": 1778157816066,
-      "type": "file"
-    },
-    {
-      "path": "docs/security/password_hashing.md",
-      "accessCount": 2,
-      "lastAccessed": 1778157816442,
-      "type": "file"
-    },
-    {
-      "path": "docs/00_overview/project_summary.md",
+      "path": "docs/architecture/server_architecture.md",
       "accessCount": 1,
-      "lastAccessed": 1778082277153,
+      "lastAccessed": 1778242158498,
       "type": "file"
     },
     {
-      "path": "docs/00_overview/architecture.md",
+      "path": "docs/development/development_phases.md",
       "accessCount": 1,
-      "lastAccessed": 1778082309764,
+      "lastAccessed": 1778242159677,
       "type": "file"
     },
     {
-      "path": "docs/01_protocol/packet_format.md",
+      "path": "chat_program/src/server/client_handler.h",
       "accessCount": 1,
-      "lastAccessed": 1778082340748,
+      "lastAccessed": 1778242167959,
       "type": "file"
     },
     {
-      "path": "docs/01_protocol/packet_reference.md",
+      "path": "chat_program/src/client/state.c",
       "accessCount": 1,
-      "lastAccessed": 1778082397791,
+      "lastAccessed": 1778242169055,
       "type": "file"
     },
     {
-      "path": "docs/02_data/file_schema.md",
+      "path": "chat_program/src/client/main.c",
       "accessCount": 1,
-      "lastAccessed": 1778082448816,
+      "lastAccessed": 1778242169809,
       "type": "file"
     },
     {
-      "path": "docs/02_data/in_memory_structures.md",
+      "path": "chat_program/src/server/auth.h",
       "accessCount": 1,
-      "lastAccessed": 1778082486247,
+      "lastAccessed": 1778242169861,
       "type": "file"
     },
     {
-      "path": "docs/03_server/server_architecture.md",
+      "path": "chat_program/src/client/net.h",
       "accessCount": 1,
-      "lastAccessed": 1778082517142,
+      "lastAccessed": 1778242170219,
       "type": "file"
     },
     {
-      "path": "docs/03_server/module_auth.md",
+      "path": "chat_program/src/client/net.c",
       "accessCount": 1,
-      "lastAccessed": 1778082545356,
+      "lastAccessed": 1778242170582,
       "type": "file"
     },
     {
-      "path": "docs/03_server/module_friend.md",
+      "path": "chat_program/src/server/room.h",
       "accessCount": 1,
-      "lastAccessed": 1778082574509,
+      "lastAccessed": 1778242170591,
       "type": "file"
     },
     {
-      "path": "docs/03_server/module_room.md",
+      "path": "chat_program/src/server/dm.h",
       "accessCount": 1,
-      "lastAccessed": 1778082610572,
+      "lastAccessed": 1778242171753,
       "type": "file"
     },
     {
-      "path": "docs/03_server/module_dm.md",
+      "path": "chat_program/src/server/friend.h",
       "accessCount": 1,
-      "lastAccessed": 1778082642598,
+      "lastAccessed": 1778242172517,
       "type": "file"
     },
     {
-      "path": "docs/03_server/module_message.md",
+      "path": "chat_program/src/server/message.h",
       "accessCount": 1,
-      "lastAccessed": 1778082681507,
+      "lastAccessed": 1778242173674,
       "type": "file"
     },
     {
-      "path": "docs/03_server/module_broadcast.md",
+      "path": "chat_program/src/client/menu_main.h",
       "accessCount": 1,
-      "lastAccessed": 1778082709267,
+      "lastAccessed": 1778242176887,
       "type": "file"
     },
     {
-      "path": "docs/04_client/client_architecture.md",
+      "path": "chat_program/src/client/menu_chat.h",
       "accessCount": 1,
-      "lastAccessed": 1778082744998,
+      "lastAccessed": 1778242177689,
       "type": "file"
     },
     {
-      "path": "docs/04_client/console_ui_design.md",
+      "path": "chat_program/src/client/menu_dm.h",
       "accessCount": 1,
-      "lastAccessed": 1778082785281,
+      "lastAccessed": 1778242178870,
       "type": "file"
     },
     {
-      "path": "docs/04_client/menu_flow.md",
+      "path": "chat_program/src/client/menu_friend.h",
       "accessCount": 1,
-      "lastAccessed": 1778082822163,
+      "lastAccessed": 1778242179503,
       "type": "file"
     },
     {
-      "path": "docs/05_features/FR_A_account.md",
+      "path": "docs/architecture/module_auth.md",
       "accessCount": 1,
-      "lastAccessed": 1778082854087,
+      "lastAccessed": 1778242179906,
       "type": "file"
     },
     {
-      "path": "docs/05_features/FR_F_friend.md",
+      "path": "docs/architecture/module_room.md",
       "accessCount": 1,
-      "lastAccessed": 1778082884644,
+      "lastAccessed": 1778242180378,
       "type": "file"
     },
     {
-      "path": "docs/05_features/FR_D_dm.md",
+      "path": "docs/architecture/module_dm.md",
       "accessCount": 1,
-      "lastAccessed": 1778082911807,
+      "lastAccessed": 1778242180686,
       "type": "file"
     },
     {
-      "path": "docs/05_features/FR_G_group_chat.md",
+      "path": "docs/architecture/module_friend.md",
       "accessCount": 1,
-      "lastAccessed": 1778082945018,
-      "type": "file"
-    },
-    {
-      "path": "docs/05_features/FR_O_open_chat.md",
-      "accessCount": 1,
-      "lastAccessed": 1778082974366,
-      "type": "file"
-    },
-    {
-      "path": "docs/05_features/FR_M_message.md",
-      "accessCount": 1,
-      "lastAccessed": 1778083019672,
-      "type": "file"
-    },
-    {
-      "path": "docs/05_features/FR_N_notification.md",
-      "accessCount": 1,
-      "lastAccessed": 1778083054588,
-      "type": "file"
-    },
-    {
-      "path": "docs/05_features/FR_C_customization.md",
-      "accessCount": 1,
-      "lastAccessed": 1778083082185,
-      "type": "file"
-    },
-    {
-      "path": "docs/06_file_structure/project_layout.md",
-      "accessCount": 1,
-      "lastAccessed": 1778083121537,
-      "type": "file"
-    },
-    {
-      "path": "docs/08_nonfunctional/nfr_checklist.md",
-      "accessCount": 1,
-      "lastAccessed": 1778083191724,
-      "type": "file"
-    },
-    {
-      "path": "docs/09_development/development_phases.md",
-      "accessCount": 1,
-      "lastAccessed": 1778083231275,
-      "type": "file"
-    },
-    {
-      "path": "docs/09_development/implementation_guide.md",
-      "accessCount": 1,
-      "lastAccessed": 1778083276579,
+      "lastAccessed": 1778242181513,
       "type": "file"
     }
   ],

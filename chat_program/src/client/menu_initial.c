@@ -11,7 +11,7 @@
 #include "menu_main.h"
 
 /* ── 비밀번호 입력 (getch 마스킹) ── */
-static void read_password(char *buf, int maxlen) {
+void read_password(char *buf, int maxlen) {
     int i = 0, c;
     while (i < maxlen - 1) {
         c = _getch();
