@@ -35,7 +35,7 @@ int  append_message(const char *path, const MessageRecord *m);
 
 /* =========================================================
  * friends.txt  포맷:
- * id//user_id//friend_id//status//created_at
+ * id//user_id//friend_id//status//status_before_block//created_at
  * ========================================================= */
 int  load_friends(const char *path);
 void save_friends(const char *path);

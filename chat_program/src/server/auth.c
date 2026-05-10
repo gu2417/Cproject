@@ -159,6 +159,13 @@ static void handle_logout(ClientSession *sess, char *payload) {
     (void)payload;
     if (sess->user_id[0] == '\0') return;
 
+    char user_id[21];
+    char nickname[21];
+    strncpy(user_id, sess->user_id, 20);
+    user_id[20] = '\0';
+    strncpy(nickname, sess->nickname, 20);
+    nickname[20] = '\0';
+
     UserRecord *u = find_user_by_id(sess->user_id);
     if (u) u->online_status = STATUS_OFFLINE;
 
@@ -173,6 +180,9 @@ static void handle_logout(ClientSession *sess, char *payload) {
     sess->room_id       = 0;
     sess->online_status = STATUS_OFFLINE;
     ReleaseMutex(g_sessions_mutex);
+
+    printf("[서버] 로그아웃: %s (%s)\n",
+           nickname[0] ? nickname : user_id, user_id);
 }
 
 /* PASS_CHANGE|old_pw_hash:new_pw_hash */

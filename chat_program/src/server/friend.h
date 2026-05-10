@@ -7,3 +7,6 @@ void friend_init(void);
 
 /* receiver가 sender를 차단했는지 확인 */
 int is_blocked_by(const char *receiver_id, const char *sender_id);
+
+int friend_block_user(const char *user_id, const char *target_id);
+int friend_unblock_user(const char *user_id, const char *target_id);

@@ -34,6 +34,12 @@ CLIENT_SRCS = \
 
 SERVER_LIBS = -lws2_32 -ladvapi32
 CLIENT_LIBS = -lws2_32
+TEST_FRIEND_UNBLOCK_SRCS = \
+    tests/friend_unblock_test.c \
+    src/server/friend.c \
+    src/server/globals.c \
+    src/common/utils.c
+TEST_LIBS = -lws2_32
 
 all: server.exe client.exe
 
@@ -43,6 +49,12 @@ server.exe: $(SERVER_SRCS)
 client.exe: $(CLIENT_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(CLIENT_LIBS)
 
+tests/friend_unblock_test.exe: $(TEST_FRIEND_UNBLOCK_SRCS)
+	$(CC) $(CFLAGS) -o $@ $^ $(TEST_LIBS)
+
+test: tests/friend_unblock_test.exe
+	./tests/friend_unblock_test.exe
+
 data:
 	mkdir -p data
 	touch data/users.txt data/rooms.txt data/messages.txt \
@@ -50,6 +62,6 @@ data:
 	      data/room_invites.txt data/user_settings.txt data/room_reads.txt
 
 clean:
-	rm -f server.exe client.exe
+	rm -f server.exe client.exe tests/friend_unblock_test.exe
 
-.PHONY: all clean data
+.PHONY: all clean data test

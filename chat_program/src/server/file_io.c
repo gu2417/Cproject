@@ -348,7 +348,7 @@ int load_messages(const char *path) {
 int load_friends(const char *path) {
     FILE  *fp;
     char   line[256];
-    char  *fields[6];
+    char  *fields[7];
     int    n;
 
     fp = fopen(path, "r");
@@ -357,7 +357,7 @@ int load_friends(const char *path) {
     g_friend_count = 0;
     while (fgets(line, sizeof(line), fp) && g_friend_count < MAX_FRIENDS) {
         if (line[0] == '\n' || line[0] == '\r' || line[0] == '\0') continue;
-        n = split_line(line, fields, 5);
+        n = split_line(line, fields, 6);
         if (n < 5) continue;
 
         FriendRecord *fr = &g_friends[g_friend_count];
@@ -366,7 +366,13 @@ int load_friends(const char *path) {
         strncpy(fr->user_id,    fields[1], 20);
         strncpy(fr->friend_id,  fields[2], 20);
         fr->status = atoi(fields[3]);
-        strncpy(fr->created_at, fields[4], 19);
+        if (n >= 6) {
+            fr->status_before_block = atoi(fields[4]);
+            strncpy(fr->created_at, fields[5], 19);
+        } else {
+            fr->status_before_block = -1;
+            strncpy(fr->created_at, fields[4], 19);
+        }
         g_friend_count++;
     }
     fclose(fp);
@@ -383,9 +389,9 @@ void save_friends(const char *path) {
 
     for (i = 0; i < g_friend_count; i++) {
         FriendRecord *fr = &g_friends[i];
-        fprintf(fp, "%d//%s//%s//%d//%s\n",
+        fprintf(fp, "%d//%s//%s//%d//%d//%s\n",
                 fr->id, fr->user_id, fr->friend_id,
-                fr->status, fr->created_at);
+                fr->status, fr->status_before_block, fr->created_at);
     }
     fclose(fp);
 }
@@ -397,9 +403,9 @@ int append_friend(const char *path, const FriendRecord *f) {
     fp = fopen(path, "a");
     if (!fp) return -1;
 
-    fprintf(fp, "%d//%s//%s//%d//%s\n",
+    fprintf(fp, "%d//%s//%s//%d//%d//%s\n",
             f->id, f->user_id, f->friend_id,
-            f->status, f->created_at);
+            f->status, f->status_before_block, f->created_at);
     fclose(fp);
     return 0;
 }

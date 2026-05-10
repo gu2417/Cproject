@@ -46,6 +46,7 @@ void ShowFriendMenu(void) {
         printf("  d. 친구 삭제\n");
         printf("  e. 차단\n");
         printf("  f. 유저 검색\n");
+        printf("  g. 차단 해제\n");
         printf("  0. 돌아가기\n");
         printf("선택> ");
         fflush(stdout);
@@ -127,6 +128,25 @@ void ShowFriendMenu(void) {
             send_packet(g_state.sock, "%s|%s",
                         FRIEND_BLOCK, g_friend_list[idx - 1].id);
             printf("[차단] %s\n", g_friend_list[idx - 1].nick);
+        }
+        else if (ch[0] == 'g') {
+            if (g_friend_count == 0) { printf("  (차단 해제할 사용자가 없습니다)\n"); continue; }
+            printf("차단 해제할 번호: ");
+            fflush(stdout);
+            int idx = 0;
+            scanf("%d", &idx);
+            { int c; while ((c = getchar()) != '\n' && c != EOF); }
+            if (idx < 1 || idx > g_friend_count) {
+                printf("[오류] 잘못된 번호입니다\n");
+                continue;
+            }
+            if (g_friend_list[idx - 1].status != FRIEND_BLOCKED_S) {
+                printf("[오류] 차단된 사용자가 아닙니다\n");
+                continue;
+            }
+            send_packet(g_state.sock, "%s|%s",
+                        FRIEND_UNBLOCK, g_friend_list[idx - 1].id);
+            printf("[차단 해제] %s\n", g_friend_list[idx - 1].nick);
         }
         else if (ch[0] == 'f') {
             /* 유저 검색 */

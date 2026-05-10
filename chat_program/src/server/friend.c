@@ -38,6 +38,54 @@ static FriendRecord *find_friend_record(const char *a, const char *b) {
     return NULL;
 }
 
+int friend_block_user(const char *user_id, const char *target_id) {
+    FriendRecord *fr = find_friend_record(user_id, target_id);
+    if (fr) {
+        if (fr->status != FRIEND_BLOCKED_S)
+            fr->status_before_block = fr->status;
+        strncpy(fr->user_id,   user_id,   20); fr->user_id[20] = '\0';
+        strncpy(fr->friend_id, target_id, 20); fr->friend_id[20] = '\0';
+        fr->status = FRIEND_BLOCKED_S;
+        return 1;
+    }
+
+    if (g_friend_count >= MAX_FRIENDS)
+        return 0;
+
+    fr = &g_friends[g_friend_count];
+    memset(fr, 0, sizeof(*fr));
+    fr->id = g_next_friend_id++;
+    strncpy(fr->user_id,   user_id,   20); fr->user_id[20] = '\0';
+    strncpy(fr->friend_id, target_id, 20); fr->friend_id[20] = '\0';
+    fr->status = FRIEND_BLOCKED_S;
+    fr->status_before_block = -1;
+    get_current_timestamp(fr->created_at);
+    g_friend_count++;
+    return 1;
+}
+
+int friend_unblock_user(const char *user_id, const char *target_id) {
+    int i, k;
+    for (i = 0; i < g_friend_count; i++) {
+        FriendRecord *fr = &g_friends[i];
+        if (fr->status == FRIEND_BLOCKED_S &&
+            strcmp(fr->user_id, user_id) == 0 &&
+            strcmp(fr->friend_id, target_id) == 0) {
+            if (fr->status_before_block == FRIEND_PENDING ||
+                fr->status_before_block == FRIEND_ACCEPTED) {
+                fr->status = fr->status_before_block;
+                fr->status_before_block = -1;
+            } else {
+                for (k = i; k < g_friend_count - 1; k++)
+                    g_friends[k] = g_friends[k+1];
+                g_friend_count--;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* FRIEND_ADD_REQ|target_id
  * → FRIEND_ADD_RES|code; 대상이 온라인이면 FRIEND_REQUEST_NOTIFY 전송 */
 static void handle_friend_add(ClientSession *sess, char *payload) {
@@ -81,6 +129,7 @@ static void handle_friend_add(ClientSession *sess, char *payload) {
     strncpy(fr->user_id,    sess->user_id, 20);
     strncpy(fr->friend_id,  target_id,     20);
     fr->status = FRIEND_PENDING;
+    fr->status_before_block = -1;
     get_current_timestamp(fr->created_at);
     g_friend_count++;
     ReleaseMutex(g_sessions_mutex);
@@ -211,6 +260,8 @@ static void handle_friend_block(ClientSession *sess, char *payload) {
     WaitForSingleObject(g_sessions_mutex, INFINITE);
     FriendRecord *fr = find_friend_record(sess->user_id, target_id);
     if (fr) {
+        if (fr->status != FRIEND_BLOCKED_S)
+            fr->status_before_block = fr->status;
         /* 방향 재설정: 차단자=user_id, 피차단=friend_id */
         strncpy(fr->user_id,   sess->user_id, 20);
         strncpy(fr->friend_id, target_id,     20);
@@ -222,9 +273,29 @@ static void handle_friend_block(ClientSession *sess, char *payload) {
         strncpy(fr->user_id,   sess->user_id, 20);
         strncpy(fr->friend_id, target_id,     20);
         fr->status = FRIEND_BLOCKED_S;
+        fr->status_before_block = -1;
         get_current_timestamp(fr->created_at);
         g_friend_count++;
     }
+    ReleaseMutex(g_sessions_mutex);
+
+    WaitForSingleObject(g_file_mutex, INFINITE);
+    save_friends(FILE_FRIENDS);
+    ReleaseMutex(g_file_mutex);
+}
+
+/* FRIEND_UNBLOCK|target_id */
+static void handle_friend_unblock(ClientSession *sess, char *payload) {
+    if (sess->user_id[0] == '\0') return;
+
+    char *target_id = payload;
+    if (!target_id) return;
+    int n = (int)strlen(target_id);
+    while (n > 0 && (target_id[n-1] == '\r' || target_id[n-1] == '\n'))
+        target_id[--n] = '\0';
+
+    WaitForSingleObject(g_sessions_mutex, INFINITE);
+    friend_unblock_user(sess->user_id, target_id);
     ReleaseMutex(g_sessions_mutex);
 
     WaitForSingleObject(g_file_mutex, INFINITE);
@@ -245,10 +316,12 @@ static void handle_friend_list(ClientSession *sess, char *payload) {
     WaitForSingleObject(g_sessions_mutex, INFINITE);
     for (i = 0; i < g_friend_count && ioff < (int)sizeof(items) - 64; i++) {
         FriendRecord *fr = &g_friends[i];
-        if (fr->status == FRIEND_BLOCKED_S) continue;
-
         const char *other = NULL;
-        if      (strcmp(fr->user_id,   sess->user_id) == 0) other = fr->friend_id;
+        if (fr->status == FRIEND_BLOCKED_S) {
+            if (strcmp(fr->user_id, sess->user_id) == 0) other = fr->friend_id;
+            else continue;
+        }
+        else if (strcmp(fr->user_id,   sess->user_id) == 0) other = fr->friend_id;
         else if (strcmp(fr->friend_id, sess->user_id) == 0) other = fr->user_id;
         else continue;
 
@@ -323,6 +396,7 @@ void friend_init(void) {
     register_handler(FRIEND_REJECT,   handle_friend_reject);
     register_handler(FRIEND_DELETE,   handle_friend_delete);
     register_handler(FRIEND_BLOCK,    handle_friend_block);
+    register_handler(FRIEND_UNBLOCK,  handle_friend_unblock);
     register_handler(FRIEND_LIST_REQ, handle_friend_list);
     register_handler(USER_SEARCH_REQ, handle_user_search);
 }

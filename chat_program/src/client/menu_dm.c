@@ -44,7 +44,21 @@ static void show_dm_chat(const char *partner_id, const char *partner_nick) {
             continue;
         }
 
-        if (strcmp(input, "/back") == 0) break;
+        if (input[0] == '/') {
+            if (strcmp(input, "/leave") == 0 || strcmp(input, "/back") == 0) {
+                break;
+            }
+            else if (strcmp(input, "/help") == 0) {
+                tui_printf("  사용 가능한 명령어");
+                tui_printf("    /leave            DM 나가기");
+                tui_printf("    /help             명령어 보기");
+                continue;
+            }
+            else {
+                tui_printf("  알 수 없는 명령어입니다. /help 참조");
+                continue;
+            }
+        }
 
         if (has_forbidden_char(input)) {
             tui_printf("  [오류] 메시지에 금지 문자(: ; | \\n)가 포함되어 있습니다.");

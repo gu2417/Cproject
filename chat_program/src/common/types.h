@@ -53,6 +53,7 @@ typedef struct {
     char   user_id[21];
     char   friend_id[21];
     int    status;             /* 0=pending, 1=accepted, 2=blocked */
+    int    status_before_block; /* -1=none, otherwise status restored on unblock */
     char   created_at[20];
 } FriendRecord;
 
