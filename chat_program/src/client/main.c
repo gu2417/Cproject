@@ -8,6 +8,7 @@
 #include "chat_tui.h"
 #include "menu_initial.h"
 
+/* 클라이언트를 시작하고 초기 메뉴를 실행한다. */
 int main(void) {
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);

@@ -9,12 +9,14 @@
 #include "packet.h"
 #include "menu_friend.h"
 
+/* 서버에서 최신 친구 목록을 받아온다. */
 static void refresh_friend_list(void) {
     g_state.response_received = 0;
     send_packet(g_state.sock, "%s|", FRIEND_LIST_REQ);
     wait_response(5000);
 }
 
+/* 저장된 친구 목록을 화면에 출력한다. */
 static void print_friend_list(void) {
     if (g_friend_count == 0) {
         printf("  (친구 목록이 비어 있습니다)\n");
@@ -33,6 +35,7 @@ static void print_friend_list(void) {
     }
 }
 
+/* 친구 추가, 수락, 차단 같은 친구 메뉴를 처리한다. */
 void ShowFriendMenu(void) {
     char ch[8];
     while (1) {

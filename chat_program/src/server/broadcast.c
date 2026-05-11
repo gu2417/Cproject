@@ -12,6 +12,7 @@
  * send_packet: 단일 소켓에 printf 스타일로 패킷을 전송한다.
  * 포맷 결과 끝에 '\n' 이 없으면 자동으로 붙인다.
  * --------------------------------------------------------------- */
+/* printf 형식으로 패킷을 만들어 한 소켓에 보낸다. */
 void send_packet(SOCKET sock, const char *fmt, ...) {
     char    buf[MAX_PKT_SIZE];
     va_list ap;
@@ -36,6 +37,7 @@ void send_packet(SOCKET sock, const char *fmt, ...) {
  * broadcast_to_all: 로그인된 모든 활성 세션에 msg 를 전송한다.
  * MUTEX: g_sessions_mutex
  * --------------------------------------------------------------- */
+/* 로그인한 모든 사용자에게 같은 메시지를 보낸다. */
 void broadcast_to_all(const char *msg) {
     int     i;
     int     len = (int)strlen(msg);
@@ -58,6 +60,7 @@ void broadcast_to_all(const char *msg) {
  * 클라이언트가 상황에 따라 인라인 표시 또는 알림으로 처리한다.
  * MUTEX: g_sessions_mutex
  * --------------------------------------------------------------- */
+/* 해당 방 멤버 중 접속 중인 사용자에게 메시지를 보낸다. */
 void broadcast_to_room(int room_id, const char *msg) {
     int i, j;
     int len = (int)strlen(msg);
@@ -87,6 +90,7 @@ void broadcast_to_room(int room_id, const char *msg) {
  * send_to_user: 특정 user_id 의 온라인 세션 하나에 msg 를 전송한다.
  * MUTEX: g_sessions_mutex
  * --------------------------------------------------------------- */
+/* 특정 사용자에게만 메시지를 보낸다. */
 void send_to_user(const char *user_id, const char *msg) {
     int i;
     int len = (int)strlen(msg);

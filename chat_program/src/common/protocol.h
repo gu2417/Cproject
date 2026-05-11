@@ -1,7 +1,7 @@
 #pragma once
 
 /* =========================================================
- * 네트워크 상수
+ * 네트워크와 저장 공간 크기
  * ========================================================= */
 #define DEFAULT_PORT      55555
 #define MAX_PKT_SIZE      10240
@@ -18,7 +18,7 @@
 #define MAX_ROOM_READS          6400
 
 /* =========================================================
- * 파일 경로 상수
+ * 데이터 파일 경로
  * ========================================================= */
 #define FILE_USERS         "data/users.txt"
 #define FILE_ROOMS         "data/rooms.txt"
@@ -31,7 +31,7 @@
 #define FILE_ROOM_READS    "data/room_reads.txt"
 
 /* =========================================================
- * 패킷 구분자
+ * 패킷과 파일에서 쓰는 구분자
  * ========================================================= */
 #define PKT_TYPE_SEP  "|"
 #define PKT_FIELD_SEP ":"
@@ -39,7 +39,7 @@
 #define FILE_FIELD_SEP "//"
 
 /* =========================================================
- * 패킷 타입 — 인증/계정
+ * 패킷 종류: 인증과 계정
  * ========================================================= */
 #define LOGIN_REQ           "LOGIN_REQ"
 #define LOGIN_RES           "LOGIN_RES"
@@ -51,10 +51,12 @@
 #define PROFILE_UPDATE_RES  "PROFILE_UPDATE_RES"
 #define PASS_CHANGE         "PASS_CHANGE"
 #define PASS_CHANGE_RES     "PASS_CHANGE_RES"
+#define ACCOUNT_DELETE      "ACCOUNT_DELETE"
+#define ACCOUNT_DELETE_RES  "ACCOUNT_DELETE_RES"
 #define STATUS_CHANGE       "STATUS_CHANGE"
 
 /* =========================================================
- * 패킷 타입 — 채팅방
+ * 패킷 종류: 채팅방
  * ========================================================= */
 #define ROOM_CREATE         "ROOM_CREATE"
 #define ROOM_CREATE_RES     "ROOM_CREATE_RES"
@@ -65,6 +67,7 @@
 #define ROOM_MSG_RECV       "ROOM_MSG_RECV"
 #define ROOM_LIST_REQ       "ROOM_LIST_REQ"
 #define ROOM_LIST_RES       "ROOM_LIST_RES"
+#define ROOM_CREATED_NOTIFY "ROOM_CREATED_NOTIFY"
 #define ROOM_HISTORY_REQ    "ROOM_HISTORY_REQ"
 #define ROOM_HISTORY_RES    "ROOM_HISTORY_RES"
 #define ROOM_INVITE         "ROOM_INVITE"
@@ -90,7 +93,7 @@
 #define ROOM_MUTE_TOGGLE_RES    "ROOM_MUTE_TOGGLE_RES"
 
 /* =========================================================
- * 패킷 타입 — 메시지
+ * 패킷 종류: 메시지
  * ========================================================= */
 #define MSG_EDIT            "MSG_EDIT"
 #define MSG_DELETE          "MSG_DELETE"
@@ -103,7 +106,7 @@
 #define MSG_PIN             "MSG_PIN"
 
 /* =========================================================
- * 패킷 타입 — DM
+ * 패킷 종류: DM
  * ========================================================= */
 #define DM_SEND             "DM_SEND"
 #define DM_RECV             "DM_RECV"
@@ -112,9 +115,11 @@
 #define DM_HISTORY_REQ      "DM_HISTORY_REQ"
 #define DM_HISTORY_RES      "DM_HISTORY_RES"
 #define DM_READ_NOTIFY      "DM_READ_NOTIFY"
+#define DM_DELETE           "DM_DELETE"
+#define DM_DELETE_RES       "DM_DELETE_RES"
 
 /* =========================================================
- * 패킷 타입 — 친구
+ * 패킷 종류: 친구
  * ========================================================= */
 #define FRIEND_ADD_REQ          "FRIEND_ADD_REQ"
 #define FRIEND_ADD_RES          "FRIEND_ADD_RES"
@@ -133,7 +138,7 @@
 #define USER_SEARCH             USER_SEARCH_REQ
 
 /* =========================================================
- * 패킷 타입 — 마이페이지
+ * 패킷 종류: 마이페이지
  * ========================================================= */
 #define MYPAGE_REQ          "MYPAGE_REQ"
 #define MYPAGE_RES          "MYPAGE_RES"
@@ -141,7 +146,7 @@
 #define MY_ROOMS_RES        "MY_ROOMS_RES"
 
 /* =========================================================
- * 패킷 타입 — 설정
+ * 패킷 종류: 설정
  * ========================================================= */
 #define SETTINGS_REQ        "SETTINGS_REQ"
 #define SETTINGS_RES        "SETTINGS_RES"
@@ -149,7 +154,7 @@
 #define SETTINGS_UPDATE_RES "SETTINGS_UPDATE_RES"
 
 /* =========================================================
- * 패킷 타입 — 알림/시스템
+ * 패킷 종류: 알림과 상태 확인
  * ========================================================= */
 #define NOTIFY              "NOTIFY"
 #define TYPING_START        "TYPING_START"
@@ -162,7 +167,7 @@
 #define ERROR_PKT           "ERROR"
 
 /* =========================================================
- * 응답 코드 (패킷마다 다름!)
+ * 응답 코드
  * ========================================================= */
 /* LOGIN_RES */
 #define LOGIN_OK            0
@@ -170,12 +175,12 @@
 #define LOGIN_WRONG_PW      2
 #define LOGIN_ALREADY_ONLINE 3
 
-/* REGISTER_RES — 성공=1 (LOGIN과 다름!) */
+/* REGISTER_RES: 성공=1 */
 #define REGISTER_OK         1
 #define REGISTER_DUPLICATE  2
 #define REGISTER_ERROR      3
 
-/* ROOM_CREATE_RES — 성공=1, 실패=0 */
+/* ROOM_CREATE_RES: 성공=1, 실패=0 */
 #define ROOM_CREATE_OK      1
 #define ROOM_CREATE_FAIL    0
 
@@ -192,7 +197,7 @@
 #define FRIEND_ALREADY      3
 
 /* =========================================================
- * 메시지 타입
+ * 메시지 종류
  * ========================================================= */
 #define MSG_TYPE_NORMAL   0
 #define MSG_TYPE_SYSTEM   1
@@ -227,3 +232,7 @@
 /* PASS_CHANGE_RES */
 #define PASS_OK                 0
 #define PASS_WRONG_PW           1
+
+/* ACCOUNT_DELETE_RES */
+#define ACCOUNT_DELETE_OK       0
+#define ACCOUNT_DELETE_WRONG_PW 1

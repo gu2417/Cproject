@@ -5,13 +5,17 @@
 
 /* 단일 소켓에 printf 스타일로 패킷을 전송한다.
  * 포맷 문자열에 \n 이 없으면 자동으로 붙인다. */
+/* 한 클라이언트에게 정해진 형식의 패킷을 보낸다. */
 void send_packet(SOCKET sock, const char *fmt, ...);
 
 /* P0: 로그인된 모든 활성 세션에 msg 를 송신한다. */
+/* 접속 중인 모든 사용자에게 같은 메시지를 보낸다. */
 void broadcast_to_all(const char *msg);
 
 /* P1: 특정 room_id 에 속한 세션에만 msg 를 송신한다. */
+/* 특정 채팅방에 들어와 있는 사용자들에게 메시지를 보낸다. */
 void broadcast_to_room(int room_id, const char *msg);
 
 /* 특정 user_id 의 온라인 세션에 msg 를 송신한다. */
+/* 아이디가 일치하는 접속 사용자에게 메시지를 보낸다. */
 void send_to_user(const char *user_id, const char *msg);

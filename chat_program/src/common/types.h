@@ -6,9 +6,10 @@
 #include "protocol.h"
 
 /* =========================================================
- * 서버측 구조체
+ * 서버가 파일과 메모리에 저장하는 자료형
  * ========================================================= */
 
+/* 가입한 사용자 한 명의 정보를 담는다. */
 typedef struct {
     int    id;
     char   id_str[21];
@@ -20,6 +21,7 @@ typedef struct {
     char   status_msg[101];
 } UserRecord;
 
+/* 채팅방 기본 정보와 방 설정을 담는다. */
 typedef struct {
     int    id;
     char   name[31];
@@ -34,6 +36,7 @@ typedef struct {
     int    is_deleted;
 } RoomRecord;
 
+/* 채팅방 메시지와 DM 내용을 한 가지 형태로 저장한다. */
 typedef struct {
     int    id;
     int    room_id;            /* 0 = DM */
@@ -48,6 +51,7 @@ typedef struct {
     int    is_deleted;
 } MessageRecord;
 
+/* 친구 신청, 친구 관계, 차단 상태를 저장한다. */
 typedef struct {
     int    id;
     char   user_id[21];
@@ -57,21 +61,24 @@ typedef struct {
     char   created_at[20];
 } FriendRecord;
 
+/* 사용자가 어느 방에 속해 있는지와 방 안 권한을 저장한다. */
 typedef struct {
     int    room_id;
     char   user_id[21];
-    char   open_nick[21];      /* 오픈채팅 닉네임, 빈 문자열이면 users.txt nickname 사용 */
+    char   open_nick[21];      /* 오픈채팅 별명, 빈 문자열이면 users.txt nickname 사용 */
     int    is_admin;
     char   joined_at[20];
     int    is_muted;
 } RoomMemberRecord;
 
+/* DM 메시지를 누가 언제 읽었는지 저장한다. */
 typedef struct {
     int    msg_id;
     char   reader_id[21];
     char   read_at[20];
 } DmReadRecord;
 
+/* 채팅방 초대 요청과 처리 상태를 저장한다. */
 typedef struct {
     int    id;
     int    room_id;
@@ -81,6 +88,7 @@ typedef struct {
     char   created_at[20];
 } RoomInviteRecord;
 
+/* 사용자별 화면 색상, 테마, 알림 설정을 저장한다. */
 typedef struct {
     char   user_id[21];
     char   msg_color[16];      /* "cyan", "yellow", "red", "green", "white" */
@@ -91,6 +99,7 @@ typedef struct {
     int    welcome_shown;      /* 0=첫 로그인, 1=가이드 출력 완료 */
 } UserSettingsRecord;
 
+/* 방별 마지막 읽은 메시지를 저장한다. */
 typedef struct {
     int    room_id;
     char   user_id[21];
@@ -99,9 +108,10 @@ typedef struct {
 } RoomReadRecord;
 
 /* =========================================================
- * 서버 세션
+ * 서버에 접속한 클라이언트 상태
  * ========================================================= */
 
+/* 서버가 현재 연결된 클라이언트 한 명을 관리할 때 사용한다. */
 typedef struct {
     SOCKET sock;
     int    active;
@@ -119,9 +129,10 @@ typedef struct {
 } ClientSession;
 
 /* =========================================================
- * 서버 방 정보 (인메모리)
+ * 서버 방 정보
  * ========================================================= */
 
+/* 방 기본 정보와 현재 참여자 목록을 함께 들고 있는 구조체이다. */
 typedef struct {
     RoomRecord  info;
     char        member_ids[MAX_ROOM_MEMBERS][21];
@@ -130,19 +141,24 @@ typedef struct {
 } RoomInfo;
 
 /* =========================================================
- * 클라이언트 상태 (client/state.h에서 extern 선언)
+ * 클라이언트 상태
  * ========================================================= */
 
+/* 클라이언트 프로그램이 로그인, 현재 방, 설정 상태를 기억할 때 사용한다. */
 typedef struct {
     SOCKET  sock;
     int     logged_in;
     char    user_id[21];
     char    nickname[21];
+    char    status_msg[101];
     int     online_status;
     int     current_room_id;
     char    current_room_name[31];
+    char    current_room_notice[256];
+    int     pending_invite_room_id;
+    char    pending_invite_room_name[31];
 
-    /* DM 컨텍스트 */
+    /* DM 대화 상대 */
     char    current_dm_partner[21];
     char    current_dm_partner_nick[21];
 
@@ -155,7 +171,7 @@ typedef struct {
     int     response_received;
     time_t  last_pong;
 
-    /* 설정 */
+    /* 화면 설정 */
     char    msg_color[16];
     char    nick_color[16];
     char    theme[11];

@@ -16,6 +16,7 @@
 
 /* DM_SEND|to_id:content (content-last)
  * → DM_RECV|from_id:from_nick:HH.MM:msg_id:content 를 대상에게 전송 */
+/* DM 전송 요청을 저장하고 상대가 접속 중이면 전달한다. */
 static void handle_dm_send(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -78,6 +79,7 @@ static void handle_dm_send(ClientSession *sess, char *payload) {
 
 /* "//" 구분자로 line 을 fields[] 에 분리. 마지막 필드는 나머지 전체 (content-last).
  * 반환값: 파싱된 필드 수 */
+/* 저장된 한 줄을 파일 구분자로 나누어 배열에 담는다. */
 static int split_fields(char *line, char **f, int max_f) {
     int len = (int)strlen(line);
     while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r'))
@@ -100,6 +102,7 @@ static int split_fields(char *line, char **f, int max_f) {
 /* DM_LIST_REQ|
  * → DM_LIST_RES|count:partner_id:nick:ts:unread:last_msg;...  (last_msg content-last)
  * messages.txt 에서 room_id=0 레코드를 스캔해 파트너별 최근 메시지 집계 */
+/* 사용자의 DM 대화 목록과 안 읽은 수를 만든다. */
 static void handle_dm_list(ClientSession *sess, char *payload) {
     (void)payload;
     if (sess->user_id[0] == '\0') return;
@@ -202,6 +205,7 @@ static void handle_dm_list(ClientSession *sess, char *payload) {
 /* DM_HISTORY_REQ|partner_id:count
  * → DM_HISTORY_RES|count:msg_id:from_id:ts:read:content;...  (content-last)
  * messages.txt 에서 해당 파트너와의 DM 이력 반환 */
+/* 선택한 상대와의 DM 기록을 찾아서 보낸다. */
 static void handle_dm_history(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -339,8 +343,85 @@ static void handle_dm_history(ClientSession *sess, char *payload) {
     }
 }
 
+/* DM_DELETE|partner_id
+ * 현재 사용자와 partner_id 사이의 DM 기록을 삭제한다. */
+/* 요청한 DM 메시지를 삭제 처리한다. */
+static void handle_dm_delete(ClientSession *sess, char *payload) {
+    if (sess->user_id[0] == '\0') return;
+
+    char *partner_id = payload;
+    if (!partner_id || partner_id[0] == '\0') {
+        send_packet(sess->sock, DM_DELETE_RES "|1");
+        return;
+    }
+
+    int n = (int)strlen(partner_id);
+    while (n > 0 && (partner_id[n-1] == '\r' || partner_id[n-1] == '\n'))
+        partner_id[--n] = '\0';
+    if (n == 0) {
+        send_packet(sess->sock, DM_DELETE_RES "|1");
+        return;
+    }
+
+    int deleted = 0;
+
+    WaitForSingleObject(g_file_mutex, INFINITE);
+    {
+        int i;
+        for (i = 0; i < g_msg_count; i++) {
+            MessageRecord *m = &g_messages[i];
+            if (m->room_id == 0 &&
+                ((strcmp(m->from_id, sess->user_id) == 0 && strcmp(m->to_id, partner_id) == 0) ||
+                 (strcmp(m->from_id, partner_id) == 0 && strcmp(m->to_id, sess->user_id) == 0))) {
+                m->is_deleted = 1;
+            }
+        }
+
+        FILE *in = fopen(FILE_MESSAGES, "r");
+        FILE *out = fopen(FILE_MESSAGES ".tmp", "w");
+        if (!in || !out) {
+            if (in) fclose(in);
+            if (out) fclose(out);
+            ReleaseMutex(g_file_mutex);
+            send_packet(sess->sock, DM_DELETE_RES "|1");
+            return;
+        }
+
+        char line[MAX_PKT_SIZE + 256];
+        while (fgets(line, sizeof(line), in)) {
+            char tmp[MAX_PKT_SIZE + 256];
+            strncpy(tmp, line, sizeof(tmp) - 1);
+            tmp[sizeof(tmp) - 1] = '\0';
+
+            char *f[11];
+            int skip = 0;
+            if (split_fields(tmp, f, 10) >= 10 && atoi(f[1]) == 0) {
+                const char *from = f[2];
+                const char *to = f[3];
+                if ((strcmp(from, sess->user_id) == 0 && strcmp(to, partner_id) == 0) ||
+                    (strcmp(from, partner_id) == 0 && strcmp(to, sess->user_id) == 0)) {
+                    skip = 1;
+                    deleted++;
+                }
+            }
+
+            if (!skip) fputs(line, out);
+        }
+
+        fclose(in);
+        fclose(out);
+        remove(FILE_MESSAGES);
+        rename(FILE_MESSAGES ".tmp", FILE_MESSAGES);
+    }
+    ReleaseMutex(g_file_mutex);
+
+    send_packet(sess->sock, DM_DELETE_RES "|%d", deleted > 0 ? 0 : 1);
+}
+
+/* DM 관련 패킷 처리 함수를 등록한다. */
 void dm_init(void) {
     register_handler(DM_SEND,        handle_dm_send);
     register_handler(DM_LIST_REQ,    handle_dm_list);
     register_handler(DM_HISTORY_REQ, handle_dm_history);
+    register_handler(DM_DELETE,      handle_dm_delete);
 }

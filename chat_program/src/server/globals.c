@@ -44,6 +44,7 @@ HANDLE g_console_mutex  = NULL;
  * load_users(), load_rooms(), load_room_members() 호출 후 실행.
  * load_messages() 가 g_next_msg_id 를 직접 갱신하므로 여기서는 제외.
  * --------------------------------------------------------------- */
+/* 파일을 읽은 뒤 다음 ID 값을 다시 맞춘다. */
 void restore_next_ids(void) {
     int i;
 
@@ -72,6 +73,7 @@ void restore_next_ids(void) {
     }
 }
 
+/* 아이디 문자열로 사용자 정보를 찾는다. */
 UserRecord *find_user_by_id(const char *user_id) {
     int i;
     for (i = 0; i < g_user_count; i++) {
@@ -82,6 +84,7 @@ UserRecord *find_user_by_id(const char *user_id) {
 }
 
 /* MUTEX: 호출자가 g_sessions_mutex 를 보유해야 한다. */
+/* 접속 중인 사용자 세션을 찾는다. */
 ClientSession *find_session_by_id(const char *user_id) {
     int i;
     for (i = 0; i < MAX_CLIENTS; i++) {
@@ -92,6 +95,7 @@ ClientSession *find_session_by_id(const char *user_id) {
 }
 
 /* MUTEX: 호출자가 g_sessions_mutex 를 보유해야 한다. */
+/* 방 번호로 방 배열의 위치를 찾는다. */
 int find_room_idx(int room_id) {
     int i;
     for (i = 0; i < g_room_count; i++) {
@@ -101,6 +105,7 @@ int find_room_idx(int room_id) {
     return -1;
 }
 
+/* 사용자가 작성한 삭제되지 않은 메시지 수를 센다. */
 int count_user_messages(const char *user_id) {
     int i, n = 0;
     for (i = 0; i < g_msg_count; i++) {
@@ -111,13 +116,13 @@ int count_user_messages(const char *user_id) {
     return n;
 }
 
+/* 사용자가 참여 중인 방 수를 센다. */
 int count_user_rooms(const char *user_id) {
     int i, j, n = 0;
-    for (i = 0; i < g_room_member_count; i++) {
-        if (strcmp(g_room_members[i].user_id, user_id) != 0) continue;
-        for (j = 0; j < g_room_count; j++) {
-            if (g_rooms[j].info.id == g_room_members[i].room_id &&
-                !g_rooms[j].info.is_deleted) {
+    for (i = 0; i < g_room_count; i++) {
+        if (g_rooms[i].info.is_deleted) continue;
+        for (j = 0; j < g_rooms[i].member_count; j++) {
+            if (strcmp(g_rooms[i].member_ids[j], user_id) == 0) {
                 n++;
                 break;
             }
@@ -126,6 +131,7 @@ int count_user_rooms(const char *user_id) {
     return n;
 }
 
+/* 사용자의 수락된 친구 수를 센다. */
 int count_user_friends(const char *user_id) {
     int i, n = 0;
     for (i = 0; i < g_friend_count; i++) {

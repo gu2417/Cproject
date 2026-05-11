@@ -15,19 +15,29 @@
 /* ── 콘솔 출력 핸들 ──────────────────────────────────── */
 static HANDLE s_hout = INVALID_HANDLE_VALUE;
 
+/* 콘솔 출력 핸들을 처음 한 번 준비한다. */
 static void hout_init(void) {
     if (s_hout == INVALID_HANDLE_VALUE)
         s_hout = GetStdHandle(STD_OUTPUT_HANDLE);
 }
 
 /* WriteFile로 직접 출력 — fputs/fflush 보다 확실하게 반영됨 */
+/* 콘솔에 문자열을 그대로 출력한다. */
 static void con_write(const char *s) {
     DWORD written;
     WriteFile(s_hout, s, (DWORD)strlen(s), &written, NULL);
 }
 
+/* 현재 테마에 맞는 기본 글자 색을 고른다. */
+static WORD theme_attr(void) {
+    if (strcmp(g_state.theme, "light") == 0)
+        return BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE;
+    return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+}
+
 
 /* ── 뷰포트 기준 커서 이동 ───────────────────────────── */
+/* 현재 콘솔 화면의 시작 위치를 가져온다. */
 static void get_viewport(int *top, int *left) {
     CONSOLE_SCREEN_BUFFER_INFO ci;
     if (GetConsoleScreenBufferInfo(s_hout, &ci)) {
@@ -36,6 +46,7 @@ static void get_viewport(int *top, int *left) {
     } else { *top = 0; *left = 0; }
 }
 
+/* 콘솔 창의 행과 열 크기를 가져온다. */
 static void get_size(int *rows, int *cols) {
     CONSOLE_SCREEN_BUFFER_INFO ci;
     if (GetConsoleScreenBufferInfo(s_hout, &ci)) {
@@ -45,6 +56,7 @@ static void get_size(int *rows, int *cols) {
 }
 
 /* row, col: 1-based, 뷰포트 기준 */
+/* 커서를 원하는 위치로 옮긴다. */
 static void win_move(int row, int col) {
     int vtop, vleft;
     get_viewport(&vtop, &vleft);
@@ -52,16 +64,17 @@ static void win_move(int row, int col) {
     SetConsoleCursorPosition(s_hout, pos);
 }
 
+/* 지정한 줄을 빈칸으로 지운다. */
 static void clear_line_at(int row, int cols) {
     int vtop, vleft;
     get_viewport(&vtop, &vleft);
     COORD pos = { (SHORT)vleft, (SHORT)(vtop + row - 1) };
     DWORD w;
     FillConsoleOutputCharacterA(s_hout, ' ', cols, pos, &w);
-    FillConsoleOutputAttribute(s_hout,
-        FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE, cols, pos, &w);
+    FillConsoleOutputAttribute(s_hout, theme_attr(), cols, pos, &w);
 }
 
+/* 입력 중인지에 따라 커서 표시를 바꾼다. */
 static void cursor_visible(BOOL show) {
     CONSOLE_CURSOR_INFO ci;
     if (GetConsoleCursorInfo(s_hout, &ci)) {
@@ -75,6 +88,7 @@ static char s_msgs[TUI_MSG_ROWS][TUI_MSG_WIDTH];
 static int  s_head  = 0;
 static int  s_count = 0;
 static char s_room_name[64];
+static char s_notice[256];
 
 /* ── 입력 버퍼 (g_console_mutex 보호) ────────────────── */
 static char s_input[MAX_PKT_SIZE];
@@ -83,10 +97,11 @@ static int  s_input_len = 0;
 int g_tui_active = 0;
 
 /* ── 전체 화면 재그리기 (g_console_mutex 보유 상태) ───── */
+/* 채팅 화면 전체를 다시 그린다. */
 static void do_redraw(void) {
     int rows, cols;
     get_size(&rows, &cols);
-    int msg_rows = rows - 3;
+    int msg_rows = rows - 4;
     if (msg_rows < 1) msg_rows = 1;
 
     cursor_visible(FALSE);
@@ -100,13 +115,22 @@ static void do_redraw(void) {
     if ((int)strlen(hdr) >= cols) hdr[cols - 1] = '\0';
     con_write(hdr);
 
-    /* 메시지 영역 (2행 ~ msg_rows+1행) */
+    clear_line_at(2, cols);
+    win_move(2, 1);
+    if (s_notice[0] != '\0') {
+        char notice_line[TUI_MSG_WIDTH];
+        snprintf(notice_line, sizeof(notice_line), "[공지] %s", s_notice);
+        if ((int)strlen(notice_line) >= cols) notice_line[cols - 1] = '\0';
+        con_write(notice_line);
+    }
+
+    /* 메시지 영역 (3행 ~ msg_rows+2행) */
     int start = (s_count > msg_rows) ? (s_count - msg_rows) : 0;
     for (int r = 0; r < msg_rows; r++) {
-        clear_line_at(r + 2, cols);
+        clear_line_at(r + 3, cols);
         int idx = start + r;
         if (idx < s_count) {
-            win_move(r + 2, 1);
+            win_move(r + 3, 1);
             int bi = (s_head - s_count + idx + TUI_MSG_ROWS) % TUI_MSG_ROWS;
             con_write(s_msgs[bi]);
         }
@@ -131,6 +155,7 @@ static void do_redraw(void) {
 }
 
 /* ── 입력줄만 갱신 (g_console_mutex 보유 상태) ─────────── */
+/* 입력 줄만 다시 그린다. */
 static void redraw_input(void) {
     int rows, cols;
     get_size(&rows, &cols);
@@ -143,6 +168,7 @@ static void redraw_input(void) {
 }
 
 /* ── 마지막 UTF-8 문자 제거 ──────────────────────────── */
+/* 입력 버퍼에서 마지막 문자를 지운다. */
 static void rm_last_char(void) {
     if (s_input_len <= 0) return;
     int i = s_input_len - 1;
@@ -152,6 +178,7 @@ static void rm_last_char(void) {
 }
 
 /* ── 화면 지우기 (뷰포트 기준) ───────────────────────── */
+/* 현재 보이는 콘솔 영역을 깨끗하게 비운다. */
 static void clear_viewport(void) {
     int rows, cols;
     get_size(&rows, &cols);
@@ -160,9 +187,7 @@ static void clear_viewport(void) {
     COORD origin = { (SHORT)vleft, (SHORT)vtop };
     DWORD w;
     FillConsoleOutputCharacterA(s_hout, ' ', rows * cols, origin, &w);
-    FillConsoleOutputAttribute(s_hout,
-        FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE,
-        rows * cols, origin, &w);
+    FillConsoleOutputAttribute(s_hout, theme_attr(), rows * cols, origin, &w);
     win_move(1, 1);
 }
 
@@ -170,35 +195,69 @@ static void clear_viewport(void) {
  * 공개 API
  * ════════════════════════════════════════════════════════ */
 
+/* TUI에서 사용할 콘솔 정보를 초기화한다. */
 void tui_init(void) {
     hout_init();
     DWORD mode = 0;
     GetConsoleMode(s_hout, &mode);
     SetConsoleMode(s_hout, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    tui_apply_theme();
 }
 
+/* 설정된 테마를 현재 TUI 화면에 적용한다. */
+void tui_apply_theme(void) {
+    hout_init();
+    SetConsoleTextAttribute(s_hout, theme_attr());
+    if (strcmp(g_state.theme, "light") == 0)
+        con_write("\x1b[47;30m");
+    else
+        con_write("\x1b[0m");
+}
+
+/* 채팅방 TUI 화면으로 들어간다. */
 void tui_enter(const char *room_name) {
     hout_init();
     WaitForSingleObject(g_console_mutex, INFINITE);
+    tui_apply_theme();
     strncpy(s_room_name, room_name ? room_name : "", 63);
     s_room_name[63] = '\0';
     s_input[0]  = '\0';
     s_input_len = 0;
     s_head      = 0;
     s_count     = 0;
+    s_notice[0] = '\0';
     g_tui_active = 1;
     clear_viewport();
     ReleaseMutex(g_console_mutex);
 }
 
+/* 채팅방 TUI 화면을 빠져나온다. */
 void tui_exit(void) {
     WaitForSingleObject(g_console_mutex, INFINITE);
+    if (!g_tui_active) {
+        ReleaseMutex(g_console_mutex);
+        return;
+    }
     g_tui_active = 0;
     clear_viewport();
     ReleaseMutex(g_console_mutex);
 }
 
+/* 채팅방 공지 내용을 화면에 반영한다. */
+void tui_set_notice(const char *notice) {
+    WaitForSingleObject(g_console_mutex, INFINITE);
+    if (notice && notice[0] != '\0') {
+        strncpy(s_notice, notice, sizeof(s_notice) - 1);
+        s_notice[sizeof(s_notice) - 1] = '\0';
+    } else {
+        s_notice[0] = '\0';
+    }
+    if (g_tui_active) do_redraw();
+    ReleaseMutex(g_console_mutex);
+}
+
 /* g_console_mutex 보유 상태에서 호출 */
+/* 채팅 출력 영역에 한 줄을 추가한다. */
 void tui_puts(const char *line) {
     if (g_tui_active) {
         strncpy(s_msgs[s_head], line, TUI_MSG_WIDTH - 1);
@@ -212,6 +271,7 @@ void tui_puts(const char *line) {
     }
 }
 
+/* printf 형식으로 만든 문자열을 채팅 출력 영역에 추가한다. */
 void tui_printf(const char *fmt, ...) {
     char buf[TUI_MSG_WIDTH];
     va_list ap;
@@ -227,6 +287,7 @@ void tui_printf(const char *fmt, ...) {
     ReleaseMutex(g_console_mutex);
 }
 
+/* 사용자 입력을 한 줄 읽어서 넘겨준다. */
 int tui_readline(char *buf, int max_bytes) {
     /* 시작 시 강제 재그리기 — 이전 처리 중 도착한 메시지 즉시 표시 */
     WaitForSingleObject(g_console_mutex, INFINITE);

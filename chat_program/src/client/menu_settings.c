@@ -8,6 +8,7 @@
 #include "net.h"
 #include "menu_settings.h"
 
+/* 현재 저장된 화면 설정을 출력한다. */
 static void print_current_settings(void) {
     static const char *ts_labels[] = {"HH:MM", "HH:MM:SS", "MM-DD HH:MM"};
     int tf = g_state.ts_format;
@@ -21,6 +22,7 @@ static void print_current_settings(void) {
     printf("  ─────────────────────────────\n");
 }
 
+/* 색상, 테마, 시간 표시, 알림 설정 메뉴를 처리한다. */
 void ShowSettingsMenu(void) {
     /* 현재 설정 로드 — SETTINGS_RES 핸들러가 g_state에 저장 */
     g_state.response_received = 0;

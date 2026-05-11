@@ -12,6 +12,7 @@
 #include "user_store.h"
 
 /* 유저 닉네임 반환. 없으면 user_id를 복사한다. */
+/* 사용자 아이디로 닉네임을 찾아 돌려준다. */
 void get_nickname(const char *user_id, char out_nick[21]) {
     int i;
     for (i = 0; i < g_user_count; i++) {
@@ -26,6 +27,7 @@ void get_nickname(const char *user_id, char out_nick[21]) {
 }
 
 /* last_seen을 현재 시각으로 갱신하고 파일을 저장한다. */
+/* 사용자의 마지막 접속 시간을 현재 시간으로 갱신한다. */
 void update_last_seen(const char *user_id) {
     UserRecord *u = find_user_by_id(user_id);
     if (!u) return;
@@ -37,6 +39,7 @@ void update_last_seen(const char *user_id) {
 
 /* user_id의 친구(accepted) 중 온라인인 세션에 FRIEND_STATUS_CHANGE를 전송한다.
  * MUTEX: g_sessions_mutex 내부 획득 */
+/* 친구들에게 사용자의 온라인 상태 변경을 알린다. */
 void notify_friend_status_change(const char *user_id, int new_status) {
     char nick[21] = {0};
     char msg[256];
@@ -72,6 +75,7 @@ void notify_friend_status_change(const char *user_id, int new_status) {
 }
 
 /* MYPAGE_REQ| → MYPAGE_RES|id:nickname:created_at:last_seen:msg_count:room_count:friend_count:status_msg */
+/* 마이페이지에 필요한 사용자 요약 정보를 보낸다. */
 static void handle_mypage(ClientSession *sess, char *payload) {
     (void)payload;
     if (sess->user_id[0] == '\0') return;
@@ -87,6 +91,7 @@ static void handle_mypage(ClientSession *sess, char *payload) {
 }
 
 /* MY_ROOMS_REQ| → MY_ROOMS_RES|room_id:name;room_id:name;... */
+/* 사용자가 참여한 방 목록을 만들어 보낸다. */
 static void handle_my_rooms(ClientSession *sess, char *payload) {
     (void)payload;
     if (sess->user_id[0] == '\0') return;
@@ -120,18 +125,31 @@ static void handle_my_rooms(ClientSession *sess, char *payload) {
 }
 
 /* PROFILE_UPDATE|new_nick:status_msg → PROFILE_UPDATE_RES|0 (or 1) */
+/* 닉네임과 상태 메시지 변경 요청을 처리한다. */
 static void handle_profile_update(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
-    char *new_nick   = strtok(payload, ":");
-    char *status_msg = strtok(NULL, "");
+    char *new_nick = payload;
+    char *status_msg = "";
     int   n, i;
 
-    if (!new_nick || strlen(new_nick) == 0 || strlen(new_nick) > 20) return;
-    if (status_msg) {
-        n = (int)strlen(status_msg);
-        while (n > 0 && (status_msg[n-1] == '\r' || status_msg[n-1] == '\n'))
-            status_msg[--n] = '\0';
+    if (!payload) {
+        send_packet(sess->sock, PROFILE_UPDATE_RES "|1");
+        return;
     }
+    status_msg = strchr(payload, ':');
+    if (status_msg) {
+        *status_msg++ = '\0';
+    } else {
+        status_msg = "";
+    }
+
+    if (!new_nick || strlen(new_nick) == 0 || strlen(new_nick) > 20) {
+        send_packet(sess->sock, PROFILE_UPDATE_RES "|1");
+        return;
+    }
+    n = (int)strlen(status_msg);
+    while (n > 0 && (status_msg[n-1] == '\r' || status_msg[n-1] == '\n'))
+        status_msg[--n] = '\0';
 
     /* 닉네임 중복 검사 */
     for (i = 0; i < g_user_count; i++) {
@@ -143,12 +161,18 @@ static void handle_profile_update(ClientSession *sess, char *payload) {
     }
 
     UserRecord *u = find_user_by_id(sess->user_id);
-    if (!u) return;
+    if (!u) {
+        send_packet(sess->sock, PROFILE_UPDATE_RES "|1");
+        return;
+    }
     strncpy(u->nickname, new_nick, 20);
-    if (status_msg) strncpy(u->status_msg, status_msg, 100);
+    u->nickname[20] = '\0';
+    strncpy(u->status_msg, status_msg, 100);
+    u->status_msg[100] = '\0';
 
     WaitForSingleObject(g_sessions_mutex, INFINITE);
     strncpy(sess->nickname, u->nickname, 20);
+    sess->nickname[20] = '\0';
     ReleaseMutex(g_sessions_mutex);
 
     WaitForSingleObject(g_file_mutex, INFINITE);
@@ -159,6 +183,7 @@ static void handle_profile_update(ClientSession *sess, char *payload) {
 }
 
 /* STATUS_CHANGE|status_code (0=offline,1=online,2=busy,3=invisible) */
+/* 사용자의 온라인 상태 변경 요청을 처리한다. */
 static void handle_status_change(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
     int status = payload ? atoi(payload) : STATUS_ONLINE;
@@ -175,6 +200,7 @@ static void handle_status_change(ClientSession *sess, char *payload) {
 }
 
 /* SETTINGS_REQ| → SETTINGS_RES|msg_color:nick_color:theme:ts_format:dnd */
+/* 현재 저장된 사용자 설정을 클라이언트에 보낸다. */
 static void handle_settings_req(ClientSession *sess, char *payload) {
     (void)payload;
     if (sess->user_id[0] == '\0') return;
@@ -196,6 +222,7 @@ static void handle_settings_req(ClientSession *sess, char *payload) {
 }
 
 /* SETTINGS_UPDATE|msg_color:nick_color:theme:ts_format:dnd → SETTINGS_UPDATE_RES|0 */
+/* 사용자 설정 변경 내용을 저장하고 세션에도 반영한다. */
 static void handle_settings_update(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -245,11 +272,13 @@ static void handle_settings_update(ClientSession *sess, char *payload) {
 }
 
 /* PING| → PONG| */
+/* 클라이언트의 연결 확인 요청에 응답한다. */
 static void handle_ping(ClientSession *sess, char *payload) {
     (void)payload;
     send_packet(sess->sock, PONG "|");
 }
 
+/* 사용자 정보와 설정 관련 패킷 처리 함수를 등록한다. */
 void user_store_init(void) {
     register_handler(MYPAGE_REQ,      handle_mypage);
     register_handler(MY_ROOMS_REQ,    handle_my_rooms);

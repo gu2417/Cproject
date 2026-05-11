@@ -8,6 +8,7 @@
 #include "net.h"
 #include "packet.h"
 
+/* 입력한 IP와 포트로 서버에 접속한다. */
 SOCKET connect_to_server(const char *ip, int port) {
     SOCKADDR_IN addr;
     memset(&addr, 0, sizeof(addr));
@@ -29,6 +30,7 @@ SOCKET connect_to_server(const char *ip, int port) {
     return sock;
 }
 
+/* 서버로 보낼 패킷 문자열을 만들어 전송한다. */
 void send_packet(SOCKET sock, const char *fmt, ...) {
     char    buf[MAX_PKT_SIZE];
     va_list ap;
@@ -45,6 +47,7 @@ void send_packet(SOCKET sock, const char *fmt, ...) {
     send(sock, buf, n, 0);
 }
 
+/* 서버에서 오는 패킷을 계속 받아 처리한다. */
 unsigned WINAPI RecvMsg(void *arg) {
     SOCKET sock = *((SOCKET *)arg);
     char   buf[MAX_BUF_SIZE];

@@ -9,6 +9,7 @@
 #include "menu_initial.h"
 #include "menu_mypage.h"
 
+/* 마이페이지 메뉴에서 프로필과 내 방 목록을 처리한다. */
 void ShowMyPageMenu(void) {
     char ch[8];
     while (1) {
@@ -21,6 +22,7 @@ void ShowMyPageMenu(void) {
         printf("  2. 비밀번호 변경\n");
         printf("  3. 온라인 상태 변경\n");
         printf("  4. 내 방 목록\n");
+        printf("  5. 회원 탈퇴\n");
         printf("  0. 돌아가기\n");
         printf("선택> ");
         fflush(stdout);
@@ -57,9 +59,14 @@ void ShowMyPageMenu(void) {
             if (!fgets(status_msg, (int)sizeof(status_msg), stdin)) continue;
             n = (int)strlen(status_msg);
             if (n > 0 && status_msg[n - 1] == '\n') status_msg[--n] = '\0';
+            if (has_forbidden_char(status_msg)) {
+                printf("[오류] 상태메시지에 금지 문자(: ; | \\n)가 포함되어 있습니다.\n");
+                continue;
+            }
 
             /* PROFILE_UPDATE|<nickname>:<status_msg>  (status_msg content-last) */
             g_state.response_received = 0;
+            g_last_code = -1;
             send_packet(g_state.sock, "%s|%s:%s",
                         PROFILE_UPDATE, new_nick, status_msg);
             wait_response(5000);
@@ -67,6 +74,8 @@ void ShowMyPageMenu(void) {
             if (g_last_code == 0) {
                 strncpy(g_state.nickname, new_nick, 20);
                 g_state.nickname[20] = '\0';
+                strncpy(g_state.status_msg, status_msg, 100);
+                g_state.status_msg[100] = '\0';
             }
         }
         else if (ch[0] == '2') {
@@ -125,6 +134,35 @@ void ShowMyPageMenu(void) {
             g_state.response_received = 0;
             send_packet(g_state.sock, "%s|", MY_ROOMS_REQ);
             wait_response(5000);
+
+            printf("\n계속하려면 Enter를 누르세요...");
+            fflush(stdout);
+            fgets(ch, sizeof(ch), stdin);
+        }
+        else if (ch[0] == '5') {
+            char confirm[8];
+            char plain_pw[20];
+            char pw_hash[65];
+
+            printf("정말 탈퇴하시겠습니까? (yes 입력): ");
+            fflush(stdout);
+            if (!fgets(confirm, sizeof(confirm), stdin)) continue;
+            n = (int)strlen(confirm);
+            if (n > 0 && confirm[n - 1] == '\n') confirm[--n] = '\0';
+            if (strcmp(confirm, "yes") != 0) continue;
+
+            printf("비밀번호 확인: ");
+            fflush(stdout);
+            read_password(plain_pw, (int)sizeof(plain_pw));
+            if (plain_pw[0] == '\0') continue;
+
+            sha256_hex(plain_pw, pw_hash);
+            g_state.response_received = 0;
+            g_last_code = -1;
+            send_packet(g_state.sock, "%s|%s", ACCOUNT_DELETE, pw_hash);
+            wait_response(5000);
+
+            if (g_last_code == ACCOUNT_DELETE_OK) break;
         }
 
         if (!g_state.logged_in || !g_state.connected) break;

@@ -14,6 +14,7 @@
  *   room_id   : 입장할 방 ID
  *   room_name : 방 이름
  * ───────────────────────────────────────────────────────── */
+/* 선택한 채팅방에 들어가 메시지 명령을 처리한다. */
 void ShowChatRoom(int room_id, const char *room_name) {
     g_state.current_room_id = room_id;
     strncpy(g_state.current_room_name, room_name,
@@ -22,6 +23,7 @@ void ShowChatRoom(int room_id, const char *room_name) {
 
     /* TUI 초기화 후 히스토리 요청 — RecvMsg가 각 메시지를 tui_puts로 출력 */
     tui_enter(room_name);
+    tui_set_notice(g_state.current_room_notice);
     g_state.response_received = 0;
     send_packet(g_state.sock, "%s|%d:50", ROOM_HISTORY_REQ, room_id);
     wait_response(5000);
@@ -42,13 +44,18 @@ void ShowChatRoom(int room_id, const char *room_name) {
                 send_packet(g_state.sock, "%s|%d", ROOM_LEAVE, room_id);
                 break;
             }
+            else if (strcmp(input, "/roomdelete") == 0) {
+                send_packet(g_state.sock, "%s|%d", ROOM_DELETE, room_id);
+            }
             else if (strcmp(input, "/help") == 0) {
                 tui_printf("  사용 가능한 명령어:");
                 tui_printf("    /leave            — 채팅방 나가기");
+                tui_printf("    /roomdelete       방 삭제 (방장)");
                 tui_printf("    /members          — 멤버 목록");
                 tui_printf("    /invite <ID>      — 사용자 초대");
                 tui_printf("    /kick <ID>        — 사용자 강퇴 (방장)");
                 tui_printf("    /notice <내용>    — 공지 설정 (방장/관리자)");
+                tui_printf("    /noticeoff        — 공지 해제 (방장/관리자)");
                 tui_printf("    /edit <ID> <내용> — 내 메시지 수정 (5분 내)");
                 tui_printf("    /delete <ID>      — 내 메시지 삭제");
                 tui_printf("    /pin <ID>         — 메시지 핀 (방장/관리자), 0이면 해제");
@@ -81,6 +88,10 @@ void ShowChatRoom(int room_id, const char *room_name) {
                 if (*notice)
                     send_packet(g_state.sock, "%s|%d:%s",
                                 ROOM_SET_NOTICE, room_id, notice);
+            }
+            else if (strcmp(input, "/noticeoff") == 0) {
+                send_packet(g_state.sock, "%s|%d:",
+                            ROOM_SET_NOTICE, room_id);
             }
             else if (strncmp(input, "/edit ", 6) == 0) {
                 char *rest = input + 6;
@@ -178,5 +189,6 @@ void ShowChatRoom(int room_id, const char *room_name) {
     tui_exit();
     g_state.current_room_id       = 0;
     g_state.current_room_name[0]  = '\0';
+    g_state.current_room_notice[0] = '\0';
     g_state.current_dm_partner[0] = '\0';
 }

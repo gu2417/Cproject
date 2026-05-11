@@ -8,6 +8,7 @@
 #include <ctype.h>
 #include "utils.h"
 
+/* 현재 시간을 저장 형식 문자열로 만든다. */
 void get_current_timestamp(char out[20]) {
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
@@ -16,6 +17,7 @@ void get_current_timestamp(char out[20]) {
              t->tm_hour, t->tm_min, t->tm_sec);
 }
 
+/* 설정에 맞게 시간 표시 모양을 바꾼다. */
 void format_timestamp(const char *src, int fmt, char *out) {
     /* src: "YYYY-MM-DD HH:MM:SS" */
     int year, mon, day, hour, min, sec;
@@ -39,6 +41,7 @@ void format_timestamp(const char *src, int fmt, char *out) {
     }
 }
 
+/* 간단한 이모티콘 입력을 출력용 글자로 바꾼다. */
 void convert_emoticons(const char *src, char *dst, size_t n) {
     static const struct { const char *code; const char *repl; } table[] = {
         { ":smile:", "(^_^)" },
@@ -75,6 +78,7 @@ void convert_emoticons(const char *src, char *dst, size_t n) {
     dst[di] = '\0';
 }
 
+/* 패킷 구분자에 쓰이는 금지 문자가 있는지 확인한다. */
 int has_forbidden_char(const char *s) {
     for (; *s; s++) {
         if (*s == ':' || *s == ';' || *s == '|' || *s == '\n' || *s == '\r')
@@ -83,6 +87,7 @@ int has_forbidden_char(const char *s) {
     return 0;
 }
 
+/* 메시지 안에 특정 닉네임 멘션이 있는지 확인한다. */
 int detect_mention(const char *content, const char *nick) {
     if (!content || !nick || !*nick) return 0;
     size_t nlen = strlen(nick);
@@ -102,6 +107,7 @@ int detect_mention(const char *content, const char *nick) {
     return 0;
 }
 
+/* 비밀번호 문자열을 SHA-256 해시 문자열로 바꾼다. */
 void sha256_hex(const char *plain, char out[65]) {
     out[0] = '\0';
     HCRYPTPROV hProv = 0;
@@ -140,6 +146,7 @@ cleanup:
     CryptReleaseContext(hProv, 0);
 }
 
+/* 빈 필드도 놓치지 않도록 문자열을 안전하게 나눈다. */
 char *safe_strtok_r(char *str, const char *delim, char **saveptr) {
     char *start;
     if (str != NULL)

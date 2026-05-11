@@ -17,6 +17,7 @@
 #include "dm.h"
 #include "message.h"
 
+/* 서버를 시작하고 클라이언트 접속을 계속 받는다. */
 int main(void) {
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);

@@ -13,14 +13,77 @@
 #include "user_store.h"
 #include "room.h"
 
-/* HH.MM 포맷 타임스탬프 — ':' 대신 '.' 사용하여 패킷 필드 구분자 충돌 방지 */
+/* 삭제되지 않은 방 목록을 보고 다음 방 번호를 맞춘다. */
+static void reset_next_room_id(void) {
+    int i, used;
+
+    g_next_room_id = 1;
+    do {
+        used = 0;
+        for (i = 0; i < g_room_count; i++) {
+            if (!g_rooms[i].info.is_deleted &&
+                g_rooms[i].info.id == g_next_room_id) {
+                used = 1;
+                g_next_room_id++;
+                break;
+            }
+        }
+    } while (used);
+}
+
+/* 삭제된 방과 관련된 멤버, 초대, 읽음 정보를 정리한다. */
+static void cleanup_room_data(int room_id) {
+    int i, w;
+
+    for (i = 0; i < g_msg_count; i++) {
+        if (g_messages[i].room_id == room_id)
+            g_messages[i].is_deleted = 1;
+    }
+
+    w = 0;
+    for (i = 0; i < g_room_member_count; i++) {
+        if (g_room_members[i].room_id != room_id) {
+            if (w != i) g_room_members[w] = g_room_members[i];
+            w++;
+        }
+    }
+    g_room_member_count = w;
+
+    w = 0;
+    for (i = 0; i < g_room_read_count; i++) {
+        if (g_room_reads[i].room_id != room_id) {
+            if (w != i) g_room_reads[w] = g_room_reads[i];
+            w++;
+        }
+    }
+    g_room_read_count = w;
+
+    w = 0;
+    for (i = 0; i < g_room_invite_count; i++) {
+        if (g_room_invites[i].room_id != room_id) {
+            if (w != i) g_room_invites[w] = g_room_invites[i];
+            w++;
+        }
+    }
+    g_room_invite_count = w;
+
+    g_next_invite_id = 1;
+    for (i = 0; i < g_room_invite_count; i++) {
+        if (g_room_invites[i].id >= g_next_invite_id)
+            g_next_invite_id = g_room_invites[i].id + 1;
+    }
+}
+
+/* HH.MM 형식으로 만들어 ':' 구분자와 충돌하지 않게 한다. */
+/* 현재 시간을 HH:MM 형식으로 만든다. */
 static void get_time_hhmm(char out[6]) {
     SYSTEMTIME st;
     GetLocalTime(&st);
     snprintf(out, 6, "%02d.%02d", st.wHour, st.wMinute);
 }
 
-/* 방 멤버 여부 확인. g_sessions_mutex 를 내부 획득한다. */
+/* 방 멤버 여부를 확인한다. g_sessions_mutex를 잡은 상태에서 호출한다. */
+/* 사용자가 해당 방의 멤버인지 확인한다. */
 int is_room_member(int room_id, const char *user_id) {
     int i, j, found = 0;
     WaitForSingleObject(g_sessions_mutex, INFINITE);
@@ -38,7 +101,8 @@ int is_room_member(int room_id, const char *user_id) {
     return found;
 }
 
-/* ROOM_LIST_REQ|open | group | (없으면 전체) */
+/* ROOM_LIST_REQ|open 또는 group, 값이 없으면 전체 목록 */
+/* 조건에 맞는 방 목록을 만들어 클라이언트에 보낸다. */
 static void handle_room_list(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -80,7 +144,8 @@ static void handle_room_list(ClientSession *sess, char *payload) {
 }
 
 /* ROOM_CREATE|name:max_users:is_open:pw_hash (content-last)
- * → ROOM_CREATE_RES|1:room_id  or  ROOM_CREATE_RES|0 */
+ * 성공하면 ROOM_CREATE_RES|1:room_id, 실패하면 ROOM_CREATE_RES|0을 보낸다. */
+/* 새 채팅방을 만들고 만든 사용자를 멤버로 넣는다. */
 static void handle_room_create(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -128,6 +193,7 @@ static void handle_room_create(ClientSession *sess, char *payload) {
     get_current_timestamp(ri->info.created_at);
 
     strncpy(ri->member_ids[0], sess->user_id, 20);
+    ri->admin_flags[0] = 1;
     ri->member_count = 1;
 
     int room_id  = ri->info.id;
@@ -143,15 +209,43 @@ static void handle_room_create(ClientSession *sess, char *payload) {
         strncpy(mem.user_id, sess->user_id, 20);
         mem.is_admin = 1;
         get_current_timestamp(mem.joined_at);
+        if (g_room_member_count < MAX_ROOM_MEMBER_RECORDS)
+            g_room_members[g_room_member_count++] = mem;
         append_room_member(FILE_ROOM_MEMBERS, &mem);
     }
     ReleaseMutex(g_file_mutex);
+
+    {
+        char notify[MAX_PKT_SIZE];
+        int has_pw = (pw_hash && pw_hash[0] != '\0') ? 1 : 0;
+        int len = snprintf(notify, sizeof(notify) - 2,
+                           ROOM_CREATED_NOTIFY "|%d:%s:%d:%d:%d:%d:%s",
+                           room_id, ri->info.name, ri->member_count,
+                           ri->info.max_members, has_pw, ri->info.is_open,
+                           ri->info.topic);
+        if (len > 0 && len < (int)sizeof(notify) - 2) {
+            int i;
+            notify[len++] = '\n';
+            notify[len] = '\0';
+
+            WaitForSingleObject(g_sessions_mutex, INFINITE);
+            for (i = 0; i < MAX_CLIENTS; i++) {
+                if (&g_sessions[i] != sess &&
+                    g_sessions[i].active &&
+                    g_sessions[i].user_id[0] != '\0') {
+                    send(g_sessions[i].sock, notify, len, 0);
+                }
+            }
+            ReleaseMutex(g_sessions_mutex);
+        }
+    }
 
     send_packet(sess->sock, ROOM_CREATE_RES "|%d:%d", ROOM_CREATE_OK, room_id);
 }
 
 /* ROOM_JOIN|room_id  or  ROOM_JOIN|room_id:pw_hash
- * → ROOM_JOIN_RES|0:room_id:name (content-last)  or  ROOM_JOIN_RES|error_code */
+ * 성공하면 ROOM_JOIN_RES|0:room_id:name, 실패하면 ROOM_JOIN_RES|error_code를 보낸다. */
+/* 방 입장 요청을 검사하고 세션의 현재 방을 바꾼다. */
 static void handle_room_join(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -170,6 +264,23 @@ static void handle_room_join(ClientSession *sess, char *payload) {
     }
 
     int room_id = atoi(room_id_s);
+    int invited = 0;
+    int invite_idx = -1;
+
+    WaitForSingleObject(g_file_mutex, INFINITE);
+    {
+        int i;
+        for (i = 0; i < g_room_invite_count; i++) {
+            if (g_room_invites[i].room_id == room_id &&
+                strcmp(g_room_invites[i].invitee_id, sess->user_id) == 0 &&
+                g_room_invites[i].status == 0) {
+                invited = 1;
+                invite_idx = i;
+                break;
+            }
+        }
+    }
+    ReleaseMutex(g_file_mutex);
 
     WaitForSingleObject(g_sessions_mutex, INFINITE);
     int idx = find_room_idx(room_id);
@@ -181,7 +292,7 @@ static void handle_room_join(ClientSession *sess, char *payload) {
 
     RoomInfo *ri = &g_rooms[idx];
 
-    if (ri->info.pw_hash[0] != '\0') {
+    if (ri->info.pw_hash[0] != '\0' && !invited) {
         if (!pw_hash || strcmp(ri->info.pw_hash, pw_hash) != 0) {
             ReleaseMutex(g_sessions_mutex);
             send_packet(sess->sock, ROOM_JOIN_RES "|%d", ROOM_JOIN_WRONG_PW);
@@ -206,8 +317,11 @@ static void handle_room_join(ClientSession *sess, char *payload) {
     }
 
     char room_name[31];
+    char room_notice[256];
     strncpy(room_name, ri->info.name, 30);
     room_name[30] = '\0';
+    strncpy(room_notice, ri->info.notice, 255);
+    room_notice[255] = '\0';
 
     sess->room_id = room_id;
     ReleaseMutex(g_sessions_mutex);
@@ -220,7 +334,13 @@ static void handle_room_join(ClientSession *sess, char *payload) {
             mem.room_id = room_id;
             strncpy(mem.user_id, sess->user_id, 20);
             get_current_timestamp(mem.joined_at);
+            if (g_room_member_count < MAX_ROOM_MEMBER_RECORDS)
+                g_room_members[g_room_member_count++] = mem;
             append_room_member(FILE_ROOM_MEMBERS, &mem);
+            if (invite_idx >= 0 && invite_idx < g_room_invite_count) {
+                g_room_invites[invite_idx].status = 1;
+                save_room_invites(FILE_ROOM_INVITES);
+            }
         }
         ReleaseMutex(g_file_mutex);
 
@@ -240,9 +360,14 @@ static void handle_room_join(ClientSession *sess, char *payload) {
 
     send_packet(sess->sock, ROOM_JOIN_RES "|%d:%d:%s",
                 ROOM_JOIN_OK, room_id, room_name);
+
+    if (room_notice[0] != '\0') {
+        send_packet(sess->sock, ROOM_NOTICE "|%d:%s", room_id, room_notice);
+    }
 }
 
-/* ROOM_LEAVE| — 멤버 제거, 퇴장 메시지 브로드캐스트 */
+/* ROOM_LEAVE| : 멤버 제거 후 퇴장 메시지를 방에 보낸다. */
+/* 사용자를 현재 방에서 내보내고 멤버 목록을 갱신한다. */
 static void handle_room_leave(ClientSession *sess, char *payload) {
     (void)payload;
     if (sess->user_id[0] == '\0') return;
@@ -267,7 +392,7 @@ static void handle_room_leave(ClientSession *sess, char *payload) {
             }
         }
     }
-    sess->room_id = 0;  /* 클리어 후 broadcast → 본인은 미수신 */
+    sess->room_id = 0;  /* 먼저 방에서 나간 상태로 바꾼다. */
     ReleaseMutex(g_sessions_mutex);
 
     WaitForSingleObject(g_file_mutex, INFINITE);
@@ -286,8 +411,8 @@ static void handle_room_leave(ClientSession *sess, char *payload) {
     }
 }
 
-/* 메시지 내 @user_id 멘션을 감지해 해당 유저에게 NOTIFY 전송.
- * g_sessions_mutex / g_file_mutex 를 보유하지 않은 상태에서 호출한다. */
+/* 메시지 안의 @user_id 멘션을 찾아 해당 사용자에게 알림을 보낸다.
+ * g_sessions_mutex와 g_file_mutex를 잡지 않은 상태에서 호출한다. */
 static void notify_mentions(int room_id, const char *content,
                             const char *sender_nick) {
     const char *p = content;
@@ -319,7 +444,8 @@ static void notify_mentions(int room_id, const char *content,
 }
 
 /* ROOM_MSG|room_id:content (content-last)
- * → ROOM_MSG_RECV|room_id:nick:HH.MM:msg_id:0:msg_type:content 브로드캐스트 */
+ * ROOM_MSG_RECV|room_id:nick:HH.MM:msg_id:0:msg_type:content 형식으로 방에 보낸다. */
+/* 방 메시지를 저장하고 방 멤버들에게 전송한다. */
 static void handle_room_msg(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -334,7 +460,7 @@ static void handle_room_msg(ClientSession *sess, char *payload) {
 
     int room_id = atoi(room_id_s);
 
-    /* /me 접두사 감지 → MSG_TYPE_ME로 전환 */
+    /* /me 접두어가 있으면 동작 메시지로 바꾼다. */
     int         msg_type       = MSG_TYPE_NORMAL;
     const char *actual_content = content;
     if (strncmp(content, "/me ", 4) == 0 && content[4] != '\0') {
@@ -361,7 +487,7 @@ static void handle_room_msg(ClientSession *sess, char *payload) {
 
     char nick[21], ts_long[20], ts_short[6];
     get_nickname(sess->user_id, nick);
-    /* 오픈채팅 방이면 open_nick 우선 조회 (g_room_members 는 읽기 전용 접근) */
+    /* 오픈채팅방이면 방 별명을 우선 사용한다. */
     if (is_open_room) {
         int mi;
         for (mi = 0; mi < g_room_member_count; mi++) {
@@ -377,7 +503,7 @@ static void handle_room_msg(ClientSession *sess, char *payload) {
     get_current_timestamp(ts_long);
     get_time_hhmm(ts_short);
 
-    /* 이모티콘 코드 변환 (:smile: → (^_^) 등) */
+    /* 이모티콘 코드를 출력용 글자로 바꾼다. */
     char emo_content[MAX_PKT_SIZE];
     convert_emoticons(actual_content, emo_content, sizeof(emo_content));
 
@@ -408,12 +534,13 @@ static void handle_room_msg(ClientSession *sess, char *payload) {
         broadcast_to_room(room_id, buf);
     }
 
-    /* @멘션 감지 — 일반 메시지에 한해 실행 */
+    /* 일반 메시지일 때만 멘션 알림을 확인한다. */
     if (msg_type == MSG_TYPE_NORMAL)
         notify_mentions(room_id, emo_content, nick);
 }
 
-/* "//" 구분자로 line 을 최대 max_f 개 필드로 분리 (content-last). */
+/* "//" 구분자로 한 줄을 최대 max_f개 필드로 나눈다. */
+/* 방 기록 한 줄을 파일 구분자로 나눈다. */
 static int room_split_fields(char *line, char **f, int max_f) {
     int len = (int)strlen(line);
     while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r'))
@@ -433,7 +560,8 @@ static int room_split_fields(char *line, char **f, int max_f) {
     return n + 1;
 }
 
-/* "YYYY-MM-DD HH:MM:SS" → "HH.MM" (패킷 ':' 충돌 방지) */
+/* "YYYY-MM-DD HH:MM:SS"를 "HH.MM"으로 줄인다. */
+/* 저장된 시간 문자열에서 HH:MM 부분만 가져온다. */
 static void ts_to_hhmm(const char *ts, char out[6]) {
     int h = 0, m = 0;
     sscanf(ts, "%*d-%*d-%*d %d:%d", &h, &m);
@@ -441,7 +569,8 @@ static void ts_to_hhmm(const char *ts, char out[6]) {
 }
 
 /* ROOM_HISTORY_REQ|room_id:<count>
- * → ROOM_HISTORY_RES|count:msg_id:from_nick:timestamp:reply_to_id:msg_type:content;... */
+ * ROOM_HISTORY_RES|count:msg_id:from_nick:timestamp:reply_to_id:msg_type:content;... 형식으로 보낸다. */
+/* 선택한 방의 최근 메시지 기록을 클라이언트에 보낸다. */
 static void handle_room_history(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -453,7 +582,7 @@ static void handle_room_history(ClientSession *sess, char *payload) {
     int limit   = count_s ? atoi(count_s) : 50;
     if (limit <= 0 || limit > 100) limit = 50;
 
-    /* MUTEX: g_sessions_mutex — 멤버십 확인 + is_open 캡처 */
+    /* MUTEX: g_sessions_mutex 안에서 멤버 여부와 방 종류를 확인한다. */
     int is_member = 0, is_open_room = 0;
     WaitForSingleObject(g_sessions_mutex, INFINITE);
     {
@@ -505,7 +634,7 @@ static void handle_room_history(ClientSession *sess, char *payload) {
             hist[hcount].id = atoi(f[0]);
             char nick[21];
             get_nickname(f[2], nick);
-            /* 오픈채팅 방이면 open_nick 우선 조회 */
+            /* 오픈채팅방이면 방 별명을 우선 사용한다. */
             if (is_open_room) {
                 int mi;
                 for (mi = 0; mi < g_room_member_count; mi++) {
@@ -553,8 +682,9 @@ static void handle_room_history(ClientSession *sess, char *payload) {
 }
 
 /* ROOM_INVITE|room_id:target_id
- * → ROOM_INVITE_RES|code (0=SENT, 1=NOT_FOUND, 2=ALREADY_MEMBER, 3=FULL)
- * 성공 시 대상 유저에게 ROOM_INVITE_NOTIFY|room_id:room_name:inviter_nick 전송 */
+ * ROOM_INVITE_RES|code 형식으로 초대 결과를 보낸다.
+ * 성공하면 대상 사용자에게 ROOM_INVITE_NOTIFY|room_id:room_name:inviter_nick를 보낸다. */
+/* 방 초대 요청을 저장하고 상대에게 알린다. */
 static void handle_room_invite(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -582,7 +712,7 @@ static void handle_room_invite(ClientSession *sess, char *payload) {
 
     char room_name[31] = {0};
 
-    /* MUTEX: g_sessions_mutex — 방 존재 및 멤버십 확인 */
+    /* MUTEX: g_sessions_mutex 안에서 방 존재와 멤버 여부를 확인한다. */
     WaitForSingleObject(g_sessions_mutex, INFINITE);
     int idx = find_room_idx(room_id);
     if (idx < 0 || g_rooms[idx].info.is_deleted) {
@@ -617,27 +747,33 @@ static void handle_room_invite(ClientSession *sess, char *payload) {
     room_name[30] = '\0';
     ReleaseMutex(g_sessions_mutex);
 
-    /* MUTEX: g_file_mutex — 초대 레코드 기록 */
+    /* MUTEX: g_file_mutex 안에서 초대 기록을 저장한다. */
     WaitForSingleObject(g_file_mutex, INFINITE);
     {
         char ts[20];
+        RoomInviteRecord inv;
         get_current_timestamp(ts);
-        int inv_id = g_next_invite_id++;
-        /* room_invites.txt 포맷: id//room_id//inviter_id//invitee_id//status//created_at */
-        FILE *fp = fopen(FILE_ROOM_INVITES, "a");
-        if (fp) {
-            fprintf(fp, "%d//%d//%s//%s//0//%s\n",
-                    inv_id, room_id, sess->user_id, target_id, ts);
-            fclose(fp);
+        memset(&inv, 0, sizeof(inv));
+        inv.id = g_next_invite_id++;
+        inv.room_id = room_id;
+        strncpy(inv.inviter_id, sess->user_id, 20);
+        strncpy(inv.invitee_id, target_id, 20);
+        inv.status = 0;
+        strncpy(inv.created_at, ts, 19);
+        if (g_room_invite_count < MAX_INVITES) {
+            g_room_invites[g_room_invite_count++] = inv;
+            append_room_invite(FILE_ROOM_INVITES, &inv);
         }
     }
     ReleaseMutex(g_file_mutex);
 
     send_packet(sess->sock, ROOM_INVITE_RES "|0");  /* SENT */
 
-    /* 대상이 온라인이면 ROOM_INVITE_NOTIFY 전송 */
+    /* 대상이 온라인이면 초대 알림을 보낸다. */
     char nick[21];
     get_nickname(sess->user_id, nick);
+
+
     char buf[256];
     int  mlen = snprintf(buf, sizeof(buf) - 2,
                          ROOM_INVITE_NOTIFY "|%d:%s:%s",
@@ -648,8 +784,9 @@ static void handle_room_invite(ClientSession *sess, char *payload) {
     }
 }
 
-/* ROOM_KICK|room_id:target_id  (방장 전용)
- * → 대상에게 ROOM_KICKED_NOTIFY|room_id:by_nick 전송 후 멤버 제거 */
+/* ROOM_KICK|room_id:target_id
+ * 방장이나 관리자가 대상에게 알림을 보내고 멤버 목록에서 제거한다. */
+/* 권한을 확인한 뒤 방 멤버를 강퇴한다. */
 static void handle_room_kick(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -664,7 +801,7 @@ static void handle_room_kick(ClientSession *sess, char *payload) {
 
     int room_id = atoi(room_id_s);
 
-    /* MUTEX: g_sessions_mutex — 권한 확인 및 멤버 제거 */
+    /* MUTEX: g_sessions_mutex 안에서 권한 확인과 멤버 제거를 처리한다. */
     WaitForSingleObject(g_sessions_mutex, INFINITE);
     int idx = find_room_idx(room_id);
     if (idx < 0 || g_rooms[idx].info.is_deleted) {
@@ -672,13 +809,13 @@ static void handle_room_kick(ClientSession *sess, char *payload) {
         return;
     }
 
-    /* 방장만 강퇴 가능 */
+    /* 방장은 강퇴할 수 없다. */
     if (strcmp(g_rooms[idx].info.owner_id, sess->user_id) != 0) {
         ReleaseMutex(g_sessions_mutex);
         return;
     }
 
-    /* 자기 자신은 강퇴 불가 */
+    /* 자기 자신은 강퇴할 수 없다. */
     if (strcmp(target_id, sess->user_id) == 0) {
         ReleaseMutex(g_sessions_mutex);
         return;
@@ -695,7 +832,7 @@ static void handle_room_kick(ClientSession *sess, char *payload) {
         }
     }
 
-    /* 강퇴 대상의 세션 room_id 초기화 */
+    /* 강퇴 대상이 접속 중이면 현재 방 상태를 초기화한다. */
     if (found) {
         int s;
         for (s = 0; s < MAX_CLIENTS; s++) {
@@ -710,14 +847,21 @@ static void handle_room_kick(ClientSession *sess, char *payload) {
 
     if (!found) return;
 
-    /* MUTEX: g_file_mutex — 멤버 목록 저장 */
+    /* MUTEX: g_file_mutex 안에서 멤버 목록을 저장한다. */
     WaitForSingleObject(g_file_mutex, INFINITE);
     save_room_members(FILE_ROOM_MEMBERS);
     ReleaseMutex(g_file_mutex);
 
-    /* 강퇴된 사용자에게 알림 전송 */
+    /* 강퇴된 사용자에게 알림을 보낸다. */
     char nick[21];
+    char target_nick[21];
     get_nickname(sess->user_id, nick);
+    get_nickname(target_id, target_nick);
+
+    printf("[서버] 강퇴: %s (%s) -> %s (%s), 방 %d\n",
+           nick, sess->user_id, target_nick, target_id, room_id);
+    fflush(stdout);
+
     char buf[256];
     int  mlen = snprintf(buf, sizeof(buf) - 2,
                          ROOM_KICKED_NOTIFY "|%d:%s",
@@ -726,10 +870,23 @@ static void handle_room_kick(ClientSession *sess, char *payload) {
         buf[mlen++] = '\n'; buf[mlen] = '\0';
         send_to_user(target_id, buf);
     }
+
+    {
+        char ts[6];
+        get_time_hhmm(ts);
+        mlen = snprintf(buf, sizeof(buf) - 2,
+                        ROOM_MSG_RECV "|%d:[시스템]:%s:0:0:%d:%s님이 강퇴되었습니다.",
+                        room_id, ts, MSG_TYPE_SYSTEM, target_nick);
+        if (mlen > 0 && mlen < (int)sizeof(buf) - 2) {
+            buf[mlen++] = '\n'; buf[mlen] = '\0';
+            broadcast_to_room(room_id, buf);
+        }
+    }
 }
 
 /* ROOM_SET_NOTICE|room_id:notice  (notice content-last)
- * 방장 또는 관리자만 가능. 방 전체에 ROOM_NOTICE|room_id:notice 브로드캐스트. */
+ * 방장이나 관리자만 가능하며 방 전체에 ROOM_NOTICE|room_id:notice를 보낸다. */
+/* 방 공지 변경 요청을 처리한다. */
 static void handle_room_set_notice(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -753,7 +910,7 @@ static void handle_room_set_notice(ClientSession *sess, char *payload) {
     int idx = find_room_idx(room_id);
     if (idx < 0) { ReleaseMutex(g_sessions_mutex); return; }
 
-    /* 방장 또는 관리자 확인 */
+    /* 방장이나 관리자인지 확인한다. */
     int is_owner = (strcmp(g_rooms[idx].info.owner_id, sess->user_id) == 0);
     int is_admin = 0;
     int j;
@@ -782,8 +939,9 @@ static void handle_room_set_notice(ClientSession *sess, char *payload) {
     }
 }
 
-/* ROOM_GRANT_ADMIN|room_id:target_id  — 방장 전용
- * target_id 를 관리자로 승격한다. g_rooms[].admin_flags 및 g_room_members 갱신. */
+/* ROOM_GRANT_ADMIN|room_id:target_id
+ * 방장이 대상 사용자에게 관리자 권한을 준다. */
+/* 방 관리자 권한을 부여한다. */
 static void handle_room_grant_admin(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -817,7 +975,7 @@ static void handle_room_grant_admin(ClientSession *sess, char *payload) {
     ReleaseMutex(g_sessions_mutex);
     if (!found) return;
 
-    /* g_room_members 동기화 */
+    /* g_room_members 내용도 함께 맞춘다. */
     for (i = 0; i < g_room_member_count; i++) {
         if (g_room_members[i].room_id == room_id &&
             strcmp(g_room_members[i].user_id, target_id) == 0) {
@@ -831,8 +989,9 @@ static void handle_room_grant_admin(ClientSession *sess, char *payload) {
     ReleaseMutex(g_file_mutex);
 }
 
-/* ROOM_REVOKE_ADMIN|room_id:target_id  — 방장 전용
- * target_id 의 관리자 권한을 박탈한다. 방장 자신은 박탈 불가. */
+/* ROOM_REVOKE_ADMIN|room_id:target_id
+ * 방장이 대상 사용자의 관리자 권한을 회수한다. */
+/* 방 관리자 권한을 회수한다. */
 static void handle_room_revoke_admin(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -854,7 +1013,7 @@ static void handle_room_revoke_admin(ClientSession *sess, char *payload) {
         ReleaseMutex(g_sessions_mutex);
         return;
     }
-    /* 방장 자신의 권한은 박탈 불가 */
+    /* 방장 자신의 권한은 회수할 수 없다. */
     if (strcmp(target_id, sess->user_id) == 0) {
         ReleaseMutex(g_sessions_mutex);
         return;
@@ -871,7 +1030,7 @@ static void handle_room_revoke_admin(ClientSession *sess, char *payload) {
     ReleaseMutex(g_sessions_mutex);
     if (!found) return;
 
-    /* g_room_members 동기화 */
+    /* g_room_members 내용도 함께 맞춘다. */
     for (i = 0; i < g_room_member_count; i++) {
         if (g_room_members[i].room_id == room_id &&
             strcmp(g_room_members[i].user_id, target_id) == 0) {
@@ -886,7 +1045,8 @@ static void handle_room_revoke_admin(ClientSession *sess, char *payload) {
 }
 
 /* ROOM_MEMBERS_REQ|room_id
- * → ROOM_MEMBERS_RES|count:user_id:nick:is_admin:online_status;... */
+ * ROOM_MEMBERS_RES|count:user_id:nick:is_admin:online_status;... 형식으로 보낸다. */
+/* 방 멤버 목록과 권한 정보를 만들어 보낸다. */
 static void handle_room_members(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -898,7 +1058,7 @@ static void handle_room_members(ClientSession *sess, char *payload) {
     int idx = find_room_idx(room_id);
     if (idx < 0) { ReleaseMutex(g_sessions_mutex); return; }
 
-    /* 멤버 여부 확인 */
+    /* 요청한 사용자가 방 멤버인지 확인한다. */
     int j, is_member = 0;
     for (j = 0; j < g_rooms[idx].member_count; j++) {
         if (strcmp(g_rooms[idx].member_ids[j], sess->user_id) == 0) {
@@ -912,7 +1072,9 @@ static void handle_room_members(ClientSession *sess, char *payload) {
 
     for (j = 0; j < g_rooms[idx].member_count && ioff < (int)sizeof(items) - 64; j++) {
         char *uid = g_rooms[idx].member_ids[j];
-        int   adm = g_rooms[idx].admin_flags[j];
+        int   role = g_rooms[idx].admin_flags[j] ? 1 : 0;
+        if (strcmp(g_rooms[idx].info.owner_id, uid) == 0)
+            role = 2;
 
         int online_st = 0, k;
         for (k = 0; k < MAX_CLIENTS; k++) {
@@ -934,7 +1096,7 @@ static void handle_room_members(ClientSession *sess, char *payload) {
 
         if (cnt > 0) items[ioff++] = ';';
         ioff += snprintf(items + ioff, sizeof(items) - ioff,
-                         "%s:%s:%d:%d", uid, nick, adm, online_st);
+                         "%s:%s:%d:%d", uid, nick, role, online_st);
         cnt++;
     }
     ReleaseMutex(g_sessions_mutex);
@@ -949,8 +1111,9 @@ static void handle_room_members(ClientSession *sess, char *payload) {
 }
 
 /* ROOM_SET_OPEN_NICK|room_id:new_nick  (new_nick content-last)
- * 오픈채팅 방에서 자신의 닉네임을 변경한다.
- * → ROOM_SET_OPEN_NICK_RES|0 (성공) or 1 (실패) */
+ * 오픈채팅방에서 자신의 방 별명을 변경한다.
+ * ROOM_SET_OPEN_NICK_RES|0 또는 1 형식으로 결과를 보낸다. */
+/* 오픈채팅에서 사용할 별명을 변경한다. */
 static void handle_room_set_open_nick(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -993,25 +1156,36 @@ static void handle_room_set_open_nick(ClientSession *sess, char *payload) {
         return;
     }
 
-    /* g_room_members 업데이트 */
+    /* g_room_members의 방 별명을 갱신한다. */
+    int updated = 0;
+
+    WaitForSingleObject(g_file_mutex, INFINITE);
     for (i = 0; i < g_room_member_count; i++) {
         if (g_room_members[i].room_id == room_id &&
             strcmp(g_room_members[i].user_id, sess->user_id) == 0) {
             strncpy(g_room_members[i].open_nick, new_nick, 20);
+            g_room_members[i].open_nick[20] = '\0';
+            updated = 1;
             break;
         }
     }
 
-    WaitForSingleObject(g_file_mutex, INFINITE);
-    save_room_members(FILE_ROOM_MEMBERS);
+    if (updated)
+        save_room_members(FILE_ROOM_MEMBERS);
     ReleaseMutex(g_file_mutex);
 
-    send_packet(sess->sock, ROOM_SET_OPEN_NICK_RES "|0");
+    send_packet(sess->sock, ROOM_SET_OPEN_NICK_RES "|%d", updated ? 0 : 1);
 }
 
-/* ROOM_DELETE|room_id  — 방장 전용
- * is_deleted=1 로 표시 후 ROOM_DELETED_NOTIFY|room_id 브로드캐스트. */
+/* ROOM_DELETE|room_id : 방장만 사용할 수 있다.
+ * is_deleted=1로 표시하고 ROOM_DELETED_NOTIFY|room_id를 방 멤버에게 보낸다. */
+/* 방장 권한을 확인한 뒤 방을 삭제 처리한다. */
 static void handle_room_delete(ClientSession *sess, char *payload) {
+    SOCKET notify_socks[MAX_CLIENTS];
+    int notify_count = 0;
+    char buf[64];
+    int  mlen;
+
     if (sess->user_id[0] == '\0') return;
 
     int room_id = payload ? atoi(payload) : 0;
@@ -1024,24 +1198,57 @@ static void handle_room_delete(ClientSession *sess, char *payload) {
         return;
     }
 
+    mlen = snprintf(buf, sizeof(buf) - 2, ROOM_DELETED_NOTIFY "|%d", room_id);
+    if (mlen > 0 && mlen < (int)sizeof(buf) - 2) {
+        buf[mlen++] = '\n'; buf[mlen] = '\0';
+        int i, j;
+        for (i = 0; i < g_rooms[idx].member_count; i++) {
+            const char *mid = g_rooms[idx].member_ids[i];
+            for (j = 0; j < MAX_CLIENTS; j++) {
+                if (g_sessions[j].active &&
+                    g_sessions[j].sock != INVALID_SOCKET &&
+                    strcmp(g_sessions[j].user_id, mid) == 0) {
+                    if (notify_count < MAX_CLIENTS)
+                        notify_socks[notify_count++] = g_sessions[j].sock;
+                    break;
+                }
+            }
+        }
+    } else {
+        mlen = 0;
+    }
+
     g_rooms[idx].info.is_deleted = 1;
+    cleanup_room_data(room_id);
+    reset_next_room_id();
+
+    {
+        int s;
+        for (s = 0; s < MAX_CLIENTS; s++) {
+            if (g_sessions[s].active && g_sessions[s].room_id == room_id)
+                g_sessions[s].room_id = 0;
+        }
+    }
     ReleaseMutex(g_sessions_mutex);
 
     WaitForSingleObject(g_file_mutex, INFINITE);
     save_rooms(FILE_ROOMS);
+    save_room_members(FILE_ROOM_MEMBERS);
+    save_messages(FILE_MESSAGES);
+    save_room_reads(FILE_ROOM_READS);
+    save_room_invites(FILE_ROOM_INVITES);
     ReleaseMutex(g_file_mutex);
 
-    char buf[64];
-    int  mlen = snprintf(buf, sizeof(buf) - 2,
-                         ROOM_DELETED_NOTIFY "|%d", room_id);
-    if (mlen > 0 && mlen < (int)sizeof(buf) - 2) {
-        buf[mlen++] = '\n'; buf[mlen] = '\0';
-        broadcast_to_room(room_id, buf);
+    if (mlen > 0) {
+        int i;
+        for (i = 0; i < notify_count; i++)
+            send(notify_socks[i], buf, mlen, 0);
     }
 }
 
 /* ROOM_SEARCH|keyword  (content-last)
- * → ROOM_SEARCH_RES|count:room_id:name:member:max:has_pw:is_open:topic;... */
+ * ROOM_SEARCH_RES|count:room_id:name:member:max:has_pw:is_open:topic;... 형식으로 보낸다. */
+/* 방 이름이나 주제로 방을 검색한다. */
 static void handle_room_search(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -1082,7 +1289,8 @@ static void handle_room_search(ClientSession *sess, char *payload) {
 }
 
 /* ROOM_MUTE_TOGGLE|room_id
- * 자신의 뮤트 상태 토글. → ROOM_MUTE_TOGGLE_RES|room_id:new_mute */
+ * 자신의 방 알림 끄기 상태를 바꾸고 ROOM_MUTE_TOGGLE_RES|room_id:new_mute를 보낸다. */
+/* 특정 방의 알림 끄기 설정을 바꾼다. */
 static void handle_room_mute_toggle(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -1107,7 +1315,8 @@ static void handle_room_mute_toggle(ClientSession *sess, char *payload) {
     send_packet(sess->sock, ROOM_MUTE_TOGGLE_RES "|%d:%d", room_id, new_mute);
 }
 
-/* TYPING_START|room_id — 방 멤버(송신자 제외)에게 TYPING_NOTIFY|room_id:nick:1 전송 */
+/* TYPING_START|room_id : 같은 방 멤버에게 입력 시작 알림을 보낸다. */
+/* 사용자가 입력 중임을 같은 방 멤버에게 알린다. */
 static void handle_typing_start(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
     char *room_id_s = strtok(payload, ":");
@@ -1136,7 +1345,8 @@ static void handle_typing_start(ClientSession *sess, char *payload) {
     ReleaseMutex(g_sessions_mutex);
 }
 
-/* TYPING_STOP|room_id — 방 멤버(송신자 제외)에게 TYPING_NOTIFY|room_id:nick:0 전송 */
+/* TYPING_STOP|room_id : 같은 방 멤버에게 입력 종료 알림을 보낸다. */
+/* 사용자가 입력을 멈췄음을 같은 방 멤버에게 알린다. */
 static void handle_typing_stop(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
     char *room_id_s = strtok(payload, ":");
@@ -1165,6 +1375,7 @@ static void handle_typing_stop(ClientSession *sess, char *payload) {
     ReleaseMutex(g_sessions_mutex);
 }
 
+/* 채팅방 관련 패킷 처리 함수를 등록한다. */
 void room_init(void) {
     register_handler(ROOM_LIST_REQ,      handle_room_list);
     register_handler(ROOM_CREATE,        handle_room_create);

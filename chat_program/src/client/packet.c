@@ -15,10 +15,26 @@ int           g_friend_count = 0;
 DmPartnerEntry g_dm_list[MAX_DM_LIST];
 int           g_dm_count = 0;
 
+/* 설정 이름에 맞는 콘솔 색상 코드를 돌려준다. */
+static const char *setting_color_code(const char *name) {
+    if (strcmp(name, "red") == 0) return "\x1b[31m";
+    if (strcmp(name, "green") == 0) return "\x1b[32m";
+    if (strcmp(name, "yellow") == 0) return "\x1b[33m";
+    if (strcmp(name, "cyan") == 0) return "\x1b[36m";
+    if (strcmp(g_state.theme, "light") == 0) return "\x1b[30m";
+    return "\x1b[37m";
+}
+
+/* 출력 후 색상을 기본 상태로 되돌릴 코드를 돌려준다. */
+static const char *setting_reset_code(void) {
+    return (strcmp(g_state.theme, "light") == 0) ? "\x1b[47;30m" : "\x1b[0m";
+}
+
 /* ─────────────────────────────────────────────────────────
  * display_chat_message
  * g_console_mutex를 획득한 뒤 콘솔에 메시지를 출력한다.
  * ───────────────────────────────────────────────────────── */
+/* 채팅 메시지 한 줄을 종류에 맞게 꾸며서 출력한다. */
 void display_chat_message(const char *from_nick, const char *timestamp,
                           const char *content, int msg_type, int reply_to) {
     char line[TUI_MSG_WIDTH];
@@ -28,19 +44,29 @@ void display_chat_message(const char *from_nick, const char *timestamp,
     }
     switch (msg_type) {
         case MSG_TYPE_NORMAL:
-            snprintf(line, sizeof(line), "[%s] %s: %s", timestamp, from_nick, content);
+            snprintf(line, sizeof(line), "[%s] %s%s%s: %s%s%s",
+                     timestamp,
+                     setting_color_code(g_state.nick_color), from_nick, setting_reset_code(),
+                     setting_color_code(g_state.msg_color), content, setting_reset_code());
             break;
         case MSG_TYPE_SYSTEM:
             snprintf(line, sizeof(line), "--- %s ---", content);
             break;
         case MSG_TYPE_WHISPER:
-            snprintf(line, sizeof(line), "[귓속말] %s: %s", from_nick, content);
+            snprintf(line, sizeof(line), "[귓속말] %s%s%s: %s%s%s",
+                     setting_color_code(g_state.nick_color), from_nick, setting_reset_code(),
+                     setting_color_code(g_state.msg_color), content, setting_reset_code());
             break;
         case MSG_TYPE_ME:
-            snprintf(line, sizeof(line), "* %s %s", from_nick, content);
+            snprintf(line, sizeof(line), "* %s%s%s %s%s%s",
+                     setting_color_code(g_state.nick_color), from_nick, setting_reset_code(),
+                     setting_color_code(g_state.msg_color), content, setting_reset_code());
             break;
         default:
-            snprintf(line, sizeof(line), "[%s] %s: %s", timestamp, from_nick, content);
+            snprintf(line, sizeof(line), "[%s] %s%s%s: %s%s%s",
+                     timestamp,
+                     setting_color_code(g_state.nick_color), from_nick, setting_reset_code(),
+                     setting_color_code(g_state.msg_color), content, setting_reset_code());
             break;
     }
     tui_printf("%s", line);
@@ -50,6 +76,7 @@ void display_chat_message(const char *from_nick, const char *timestamp,
  * packet_parse
  * RecvMsg 스레드에서 호출. buf는 '\n' 없는 단일 줄 문자열.
  * ───────────────────────────────────────────────────────── */
+/* 서버에서 받은 패킷을 해석해서 화면 상태와 출력 내용을 갱신한다. */
 void packet_parse(const char *buf, SOCKET sock) {
     (void)sock;
 
@@ -110,6 +137,21 @@ void packet_parse(const char *buf, SOCKET sock) {
         g_state.logged_in = 0;
         g_state.response_received = 1;
     }
+    else if (strcmp(type, ACCOUNT_DELETE_RES) == 0) {
+        int code = payload ? atoi(payload) : -1;
+        g_last_code = code;
+        if (code == ACCOUNT_DELETE_OK) {
+            g_state.logged_in = 0;
+            g_state.user_id[0] = '\0';
+            g_state.nickname[0] = '\0';
+            g_state.status_msg[0] = '\0';
+            printf("[탈퇴 완료] 계정이 삭제되었습니다.\n");
+        } else {
+            printf("[탈퇴 실패] 비밀번호가 일치하지 않습니다.\n");
+        }
+        fflush(stdout);
+        g_state.response_received = 1;
+    }
 
     /* ══════════════════════════════
      *  채팅방
@@ -141,6 +183,7 @@ void packet_parse(const char *buf, SOCKET sock) {
         g_last_code = code;
         if (code == ROOM_JOIN_OK) {
             g_state.current_room_id = room_id;
+            g_state.current_room_notice[0] = '\0';
             if (rname)
                 strncpy(g_state.current_room_name, rname,
                         sizeof(g_state.current_room_name) - 1);
@@ -148,6 +191,10 @@ void packet_parse(const char *buf, SOCKET sock) {
             printf("[채팅방 입장] %s\n", rname ? rname : "");
             fflush(stdout);
             ReleaseMutex(g_console_mutex);
+            if (g_state.pending_invite_room_id == room_id) {
+                g_state.pending_invite_room_id = 0;
+                g_state.pending_invite_room_name[0] = '\0';
+            }
         } else {
             static const char *errs[] = {
                 "", "방을 찾을 수 없습니다", "비밀번호가 틀렸습니다", "방이 가득 찼습니다"
@@ -200,6 +247,32 @@ void packet_parse(const char *buf, SOCKET sock) {
         ReleaseMutex(g_console_mutex);
         g_state.response_received = 1;
     }
+    else if (strcmp(type, ROOM_CREATED_NOTIFY) == 0) {
+        if (!payload) return;
+
+        char *id_s    = strtok(payload, ":");
+        char *name    = strtok(NULL, ":");
+        char *cur     = strtok(NULL, ":");
+        char *max_s   = strtok(NULL, ":");
+        char *has_pw  = strtok(NULL, ":");
+        char *open_s  = strtok(NULL, ":");
+        char *topic   = strtok(NULL, "");
+
+        if (!id_s || !name) return;
+
+        WaitForSingleObject(g_console_mutex, INFINITE);
+        printf("\n[새 채팅방] ID:%s %s (%s/%s, %s, %s)%s%s\n",
+               id_s,
+               name,
+               cur ? cur : "?",
+               max_s ? max_s : "?",
+               (has_pw && has_pw[0] == '1') ? "비밀번호 있음" : "공개",
+               (open_s && open_s[0] == '1') ? "오픈채팅" : "채팅방",
+               (topic && *topic) ? " - " : "",
+               (topic && *topic) ? topic : "");
+        fflush(stdout);
+        ReleaseMutex(g_console_mutex);
+    }
     else if (strcmp(type, ROOM_MSG_RECV) == 0) {
         if (!payload) return;
         /* room_id:from_nick:timestamp:msg_id:reply_to_id:msg_type:content(last) */
@@ -230,21 +303,40 @@ void packet_parse(const char *buf, SOCKET sock) {
         char *by_nick = strtok(NULL, ":");
         g_state.current_room_id      = 0;
         g_state.current_room_name[0] = '\0';
+        g_state.current_room_notice[0] = '\0';
+        tui_exit();
         tui_printf("[강퇴] %s님에 의해 채팅방에서 강퇴되었습니다.",
                    by_nick ? by_nick : "관리자");
+        return;
     }
     else if (strcmp(type, ROOM_NOTICE) == 0) {
         if (!payload) return;
-        strtok(payload, ":");          /* room_id 건너뜀 */
+        char *rid_s = strtok(payload, ":");
         char *notice = strtok(NULL, "");
-        if (notice)
-            tui_printf("[공지] %s", notice);
+        int room_id = rid_s ? atoi(rid_s) : 0;
+        if (!notice) notice = "";
+        if (room_id == g_state.current_room_id) {
+            strncpy(g_state.current_room_notice, notice,
+                    sizeof(g_state.current_room_notice) - 1);
+            g_state.current_room_notice[sizeof(g_state.current_room_notice) - 1] = '\0';
+            tui_set_notice(g_state.current_room_notice);
+        }
     }
     else if (strcmp(type, ROOM_INVITE_NOTIFY) == 0) {
         if (!payload) return;
         char *rid_s    = strtok(payload, ":");
         char *rname    = strtok(NULL, ":");
         char *inv_nick = strtok(NULL, ":");
+        if (rid_s) {
+            g_state.pending_invite_room_id = atoi(rid_s);
+            if (rname) {
+                strncpy(g_state.pending_invite_room_name, rname,
+                        sizeof(g_state.pending_invite_room_name) - 1);
+                g_state.pending_invite_room_name[sizeof(g_state.pending_invite_room_name) - 1] = '\0';
+            } else {
+                g_state.pending_invite_room_name[0] = '\0';
+            }
+        }
         tui_printf("[초대] %s님이 '%s' 방에 초대했습니다. (방 ID: %s)",
                    inv_nick ? inv_nick : "누군가",
                    rname    ? rname    : "",
@@ -419,10 +511,14 @@ void packet_parse(const char *buf, SOCKET sock) {
                         const char *nick = is_me ? g_state.nickname
                                                  : g_state.current_dm_partner_nick;
                         char hline[TUI_MSG_WIDTH];
-                        snprintf(hline, sizeof(hline), "[%s] %s: %s",
+                        snprintf(hline, sizeof(hline), "[%s] %s%s%s: %s%s%s",
                                  ts ? ts : "?",
+                                 setting_color_code(g_state.nick_color),
                                  (nick && nick[0]) ? nick : from_id_s,
-                                 content);
+                                 setting_reset_code(),
+                                 setting_color_code(g_state.msg_color),
+                                 content,
+                                 setting_reset_code());
                         tui_puts(hline);
                     }
                     entry = safe_strtok_r(NULL, ";", &sp_entry);
@@ -437,6 +533,14 @@ void packet_parse(const char *buf, SOCKET sock) {
     else if (strcmp(type, DM_READ_NOTIFY) == 0) {
         /* DM 읽음 처리 — 다음 DM_LIST_REQ 갱신 시 미읽음 수에 반영됨 */
         (void)payload;
+    }
+
+    else if (strcmp(type, DM_DELETE_RES) == 0) {
+        int code = payload ? atoi(payload) : -1;
+        g_last_code = code;
+        tui_printf(code == 0 ? "[DM 삭제] 삭제되었습니다."
+                             : "[DM 삭제 실패] 삭제할 대화를 찾지 못했습니다.");
+        g_state.response_received = 1;
     }
 
     else if (strcmp(type, ROOM_HISTORY_RES) == 0) {
@@ -473,10 +577,14 @@ void packet_parse(const char *buf, SOCKET sock) {
                         if (mtype == 1)
                             snprintf(hline, sizeof(hline), "  --- %s ---", content);
                         else
-                            snprintf(hline, sizeof(hline), "[%s] %s: %s",
+                            snprintf(hline, sizeof(hline), "[%s] %s%s%s: %s%s%s",
                                      ts ? ts : "?",
+                                     setting_color_code(g_state.nick_color),
                                      from_nick ? from_nick : "?",
-                                     content);
+                                     setting_reset_code(),
+                                     setting_color_code(g_state.msg_color),
+                                     content,
+                                     setting_reset_code());
                         tui_puts(hline);
                     }
                     entry = safe_strtok_r(NULL, ";", &sp_entry);
@@ -612,6 +720,12 @@ void packet_parse(const char *buf, SOCKET sock) {
                 strncpy(g_state.nickname, nick_s, 20);
                 g_state.nickname[20] = '\0';
             }
+            if (status_msg) {
+                strncpy(g_state.status_msg, status_msg, 100);
+                g_state.status_msg[100] = '\0';
+            } else {
+                g_state.status_msg[0] = '\0';
+            }
         }
         fflush(stdout);
         ReleaseMutex(g_console_mutex);
@@ -651,12 +765,14 @@ void packet_parse(const char *buf, SOCKET sock) {
             if (th)    { strncpy(g_state.theme,      th, 10); g_state.theme[10]      = '\0'; }
             if (tf)      g_state.ts_format = atoi(tf);
             if (dnd_s)   g_state.dnd = atoi(dnd_s);
+            tui_apply_theme();
         }
         g_state.response_received = 1;
     }
     else if (strcmp(type, SETTINGS_UPDATE_RES) == 0) {
         int code = payload ? atoi(payload) : -1;
         g_last_code = code;
+        if (code == 0) tui_apply_theme();
         tui_printf(code == 0 ? "[설정 저장 성공]" : "[설정 저장 실패]");
         g_state.response_received = 1;
     }
@@ -706,29 +822,31 @@ void packet_parse(const char *buf, SOCKET sock) {
             tmp2[MAX_BUF_SIZE - 1] = '\0';
             char *sp_cnt;
             char *cnt_s = safe_strtok_r(tmp2, ":", &sp_cnt);
-            int   cnt   = cnt_s ? atoi(cnt_s) : 0;
+            int cnt = cnt_s ? atoi(cnt_s) : 0;
             char hline[TUI_MSG_WIDTH];
             snprintf(hline, sizeof(hline), "  멤버 목록 (%d명):", cnt);
             tui_puts(hline);
             if (cnt > 0 && sp_cnt && *sp_cnt) {
                 char *sp_entry;
                 char *entry = safe_strtok_r(sp_cnt, ";", &sp_entry);
-                static const char *ostatus[] = {"오프", "온라인", "바쁨", "오프"};
+                static const char *ostatus[] = {"오프라인", "온라인", "자리비움", "오프라인"};
                 while (entry) {
                     char ecpy[256];
-                    strncpy(ecpy, entry, 255); ecpy[255] = '\0';
+                    strncpy(ecpy, entry, 255);
+                    ecpy[255] = '\0';
                     char *sp2;
-                    char *uid    = safe_strtok_r(ecpy, ":", &sp2);
-                    char *nick   = safe_strtok_r(NULL,  ":", &sp2);
-                    char *adm_s  = safe_strtok_r(NULL,  ":", &sp2);
-                    char *onl_s  = safe_strtok_r(NULL,  "", &sp2);
+                    char *uid = safe_strtok_r(ecpy, ":", &sp2);
+                    char *nick = safe_strtok_r(NULL, ":", &sp2);
+                    char *role_s = safe_strtok_r(NULL, ":", &sp2);
+                    char *onl_s = safe_strtok_r(NULL, "", &sp2);
                     if (uid && nick) {
-                        int ost = (onl_s && atoi(onl_s) >= 0 && atoi(onl_s) <= 3)
-                                  ? atoi(onl_s) : 0;
+                        int ost = (onl_s && atoi(onl_s) >= 0 && atoi(onl_s) <= 3) ? atoi(onl_s) : 0;
+                        int role = role_s ? atoi(role_s) : 0;
+                        const char *role_label = "";
+                        if (role == 2) role_label = "[방장]";
+                        else if (role == 1) role_label = "[관리자]";
                         snprintf(hline, sizeof(hline), "    %s (%s) %s [%s]",
-                                 nick, uid,
-                                 (adm_s && adm_s[0] == '1') ? "[관리자]" : "",
-                                 ostatus[ost]);
+                                 nick, uid, role_label, ostatus[ost]);
                         tui_puts(hline);
                     }
                     entry = safe_strtok_r(NULL, ";", &sp_entry);

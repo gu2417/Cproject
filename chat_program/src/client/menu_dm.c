@@ -17,6 +17,7 @@
  *   진입 전 current_dm_partner 를 설정하여 RecvMsg 스레드가
  *   해당 상대의 DM_RECV를 인라인으로 표시하도록 한다.
  * ───────────────────────────────────────────────────────── */
+/* 선택한 상대와의 DM 대화 화면을 처리한다. */
 static void show_dm_chat(const char *partner_id, const char *partner_nick) {
     /* DM 컨텍스트 설정 */
     strncpy(g_state.current_dm_partner, partner_id,
@@ -43,6 +44,12 @@ static void show_dm_chat(const char *partner_id, const char *partner_nick) {
             if (g_state.current_dm_partner[0] == '\0') break;
             continue;
         }
+
+        while (len > 0 && (input[len - 1] == ' ' || input[len - 1] == '\t' ||
+                           input[len - 1] == '\r' || input[len - 1] == '\n')) {
+            input[--len] = '\0';
+        }
+        if (len == 0) continue;
 
         if (input[0] == '/') {
             if (strcmp(input, "/leave") == 0 || strcmp(input, "/back") == 0) {
@@ -77,6 +84,7 @@ static void show_dm_chat(const char *partner_id, const char *partner_nick) {
     g_state.current_dm_partner_nick[0] = '\0';
 }
 
+/* DM 목록과 새 대화 메뉴를 보여준다. */
 void ShowDMMenu(void) {
     while (1) {
         printf("\n====== DM ======\n");
@@ -100,6 +108,7 @@ void ShowDMMenu(void) {
         }
 
         printf("\n  n. 새 DM 시작\n");
+        printf("  d. DM 삭제\n");
         printf("  0. 돌아가기\n");
         printf("선택> ");
         fflush(stdout);
@@ -110,6 +119,33 @@ void ShowDMMenu(void) {
         if (n > 0 && ch[n - 1] == '\n') ch[--n] = '\0';
 
         if (ch[0] == '0') break;
+
+        if (ch[0] == 'd') {
+            if (g_dm_count == 0) {
+                printf("[DM 삭제 실패] 삭제할 DM이 없습니다.\n");
+                continue;
+            }
+
+            printf("삭제할 DM 번호: ");
+            fflush(stdout);
+
+            char num_s[8];
+            if (!fgets(num_s, sizeof(num_s), stdin)) break;
+            n = (int)strlen(num_s);
+            if (n > 0 && num_s[n - 1] == '\n') num_s[--n] = '\0';
+
+            int idx = atoi(num_s);
+            if (idx < 1 || idx > g_dm_count) {
+                printf("[오류] 잘못된 번호입니다.\n");
+                continue;
+            }
+
+            DmPartnerEntry *de = &g_dm_list[idx - 1];
+            g_state.response_received = 0;
+            send_packet(g_state.sock, "%s|%s", DM_DELETE, de->partner_id);
+            wait_response(5000);
+            continue;
+        }
 
         if (ch[0] == 'n') {
             /* 새 DM — 상대방 ID 입력 */

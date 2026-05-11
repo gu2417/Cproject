@@ -11,6 +11,7 @@
 #include "menu_main.h"
 
 /* ── 비밀번호 입력 (getch 마스킹) ── */
+/* 비밀번호를 화면에 보이지 않게 입력받는다. */
 void read_password(char *buf, int maxlen) {
     int i = 0, c;
     while (i < maxlen - 1) {
@@ -33,6 +34,7 @@ void read_password(char *buf, int maxlen) {
 }
 
 /* ── 한 줄 문자열 입력 (개행 제거) ── */
+/* 안내 문구를 출력하고 한 줄 입력을 받는다. */
 static void read_line(const char *prompt, char *buf, int maxlen) {
     printf("%s", prompt);
     fflush(stdout);
@@ -46,6 +48,7 @@ static void read_line(const char *prompt, char *buf, int maxlen) {
 }
 
 /* ── 로그인 ── */
+/* 로그인 정보를 입력받아 서버에 요청한다. */
 static void do_login(void) {
     char id[21], plain_pw[20], pw_hash[65];
 
@@ -85,10 +88,14 @@ static void do_login(void) {
         g_state.online_status = STATUS_OFFLINE;
         g_state.user_id[0]    = '\0';
         g_state.nickname[0]   = '\0';
+        g_state.status_msg[0] = '\0';
+        g_state.pending_invite_room_id = 0;
+        g_state.pending_invite_room_name[0] = '\0';
     }
 }
 
 /* ── 회원가입 ── */
+/* 회원가입 정보를 입력받아 서버에 요청한다. */
 static void do_register(void) {
     char id[21], nickname[21], plain_pw[20], confirm_pw[20], pw_hash[65];
 
@@ -131,6 +138,7 @@ static void do_register(void) {
 }
 
 /* ── 초기 메뉴 루프 ── */
+/* 로그인 전 초기 메뉴를 보여준다. */
 void InitialMenu(void) {
     char ch[4];
     while (1) {

@@ -16,6 +16,7 @@
  * - 호출 전 line 끝의 '\r', '\n' 을 제거한다.
  * 반환값: 파싱된 실제 필드 수
  * --------------------------------------------------------------- */
+/* 파일 한 줄을 필드 구분자로 나누어 배열에 넣는다. */
 static int split_line(char *line, char **fields, int max_fields) {
     size_t len;
     int    n   = 0;
@@ -45,6 +46,7 @@ static int split_line(char *line, char **fields, int max_fields) {
  * users.txt
  * 포맷: id//pw_hash//nickname//status_msg//online_status//is_admin//last_seen//created_at
  * --------------------------------------------------------------- */
+/* 사용자 파일을 읽어 사용자 배열에 채운다. */
 int load_users(const char *path) {
     FILE  *fp;
     char   line[512];
@@ -78,6 +80,7 @@ int load_users(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 현재 사용자 배열을 파일에 다시 저장한다. */
 void save_users(const char *path) {
     FILE *fp;
     int   i;
@@ -97,6 +100,7 @@ void save_users(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 새 사용자 한 명을 파일 끝에 추가한다. */
 int append_user(const char *path, const UserRecord *u) {
     FILE *fp;
 
@@ -116,6 +120,7 @@ int append_user(const char *path, const UserRecord *u) {
  * rooms.txt
  * 포맷: id//name//topic//pw_hash//max_users//owner_id//notice//is_open//pinned_msg_id//created_at
  * --------------------------------------------------------------- */
+/* 채팅방 파일을 읽어 방 배열에 채운다. */
 int load_rooms(const char *path) {
     FILE  *fp;
     char   line[512];
@@ -153,6 +158,7 @@ int load_rooms(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 현재 방 배열을 파일에 다시 저장한다. */
 void save_rooms(const char *path) {
     FILE *fp;
     int   i;
@@ -173,6 +179,7 @@ void save_rooms(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 새 방 하나를 파일 끝에 추가한다. */
 int append_room(const char *path, const RoomRecord *r) {
     FILE *fp;
 
@@ -193,6 +200,7 @@ int append_room(const char *path, const RoomRecord *r) {
  * 포맷: room_id//user_id//open_nick//is_admin//is_muted//joined_at
  * 로드 시 g_rooms[].member_ids / member_count 도 갱신한다.
  * --------------------------------------------------------------- */
+/* 방 멤버 파일을 읽어 멤버 배열과 방별 멤버 목록을 채운다. */
 int load_room_members(const char *path) {
     FILE  *fp;
     char   line[256];
@@ -233,7 +241,16 @@ int load_room_members(const char *path) {
         for (i = 0; i < g_room_count; i++) {
             if (g_rooms[i].info.id == room_id) {
                 int mc = g_rooms[i].member_count;
-                if (mc < MAX_ROOM_MEMBERS) {
+                int exists = 0;
+                int j;
+                for (j = 0; j < mc; j++) {
+                    if (strcmp(g_rooms[i].member_ids[j], user_id) == 0) {
+                        exists = 1;
+                        if (is_admin) g_rooms[i].admin_flags[j] = 1;
+                        break;
+                    }
+                }
+                if (!exists && mc < MAX_ROOM_MEMBERS) {
                     strncpy(g_rooms[i].member_ids[mc], user_id, 20);
                     g_rooms[i].member_ids[mc][20] = '\0';
                     g_rooms[i].admin_flags[mc] = is_admin;
@@ -249,6 +266,7 @@ int load_room_members(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 현재 방 멤버 배열을 파일에 다시 저장한다. */
 void save_room_members(const char *path) {
     FILE *fp;
     int   i, j;
@@ -260,11 +278,13 @@ void save_room_members(const char *path) {
     for (i = 0; i < g_room_member_count; i++) {
         RoomMemberRecord *m = &g_room_members[i];
         /* 삭제된 방의 멤버는 저장 제외 */
-        int room_deleted = 0;
+        int room_deleted = 1;
         for (j = 0; j < g_room_count; j++) {
             if (g_rooms[j].info.id == m->room_id) {
-                if (g_rooms[j].info.is_deleted) room_deleted = 1;
-                break;
+                if (!g_rooms[j].info.is_deleted) {
+                    room_deleted = 0;
+                    break;
+                }
             }
         }
         if (room_deleted) continue;
@@ -276,6 +296,7 @@ void save_room_members(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 방 멤버 한 명을 파일 끝에 추가한다. */
 int append_room_member(const char *path, const RoomMemberRecord *m) {
     FILE *fp;
 
@@ -298,6 +319,7 @@ int append_room_member(const char *path, const RoomMemberRecord *m) {
  * P0 에서는 메시지 전체를 인메모리에 저장하지 않는다.
  * g_next_msg_id 만 갱신한다 (T5 에서 g_messages 배열 추가 시 개선).
  * --------------------------------------------------------------- */
+/* 메시지 파일을 읽어 메시지 배열에 채운다. */
 int load_messages(const char *path) {
     FILE  *fp;
     char   line[MAX_PKT_SIZE + 256];
@@ -341,10 +363,31 @@ int load_messages(const char *path) {
     return count;
 }
 
+/* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 현재 메시지 배열을 파일에 다시 저장한다. */
+void save_messages(const char *path) {
+    FILE *fp;
+    int   i;
+
+    fp = fopen(path, "w");
+    if (!fp) return;
+
+    for (i = 0; i < g_msg_count; i++) {
+        MessageRecord *m = &g_messages[i];
+        if (m->is_deleted) continue;
+        fprintf(fp, "%d//%d//%s//%s//%d//%d//%d//%s//%s//%s\n",
+                m->id, m->room_id, m->from_id, m->to_id,
+                m->reply_to_id, m->msg_type, m->is_deleted,
+                m->created_at, m->edited_at, m->content);
+    }
+    fclose(fp);
+}
+
 /* ---------------------------------------------------------------
  * friends.txt
  * 포맷: id//user_id//friend_id//status//created_at
  * --------------------------------------------------------------- */
+/* 친구 파일을 읽어 친구 배열에 채운다. */
 int load_friends(const char *path) {
     FILE  *fp;
     char   line[256];
@@ -380,6 +423,7 @@ int load_friends(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 현재 친구 배열을 파일에 다시 저장한다. */
 void save_friends(const char *path) {
     FILE *fp;
     int   i;
@@ -397,6 +441,7 @@ void save_friends(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 친구 관계 한 건을 파일 끝에 추가한다. */
 int append_friend(const char *path, const FriendRecord *f) {
     FILE *fp;
 
@@ -414,6 +459,7 @@ int append_friend(const char *path, const FriendRecord *f) {
  * dm_reads.txt
  * 포맷: msg_id//reader_id//read_at
  * --------------------------------------------------------------- */
+/* DM 읽음 파일을 읽어 읽음 배열에 채운다. */
 int load_dm_reads(const char *path) {
     FILE  *fp;
     char   line[256];
@@ -441,6 +487,7 @@ int load_dm_reads(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 현재 DM 읽음 배열을 파일에 다시 저장한다. */
 void save_dm_reads(const char *path) {
     FILE *fp;
     int   i;
@@ -458,6 +505,7 @@ void save_dm_reads(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* DM 읽음 기록 한 건을 파일 끝에 추가한다. */
 int append_dm_read(const char *path, const DmReadRecord *r) {
     FILE *fp;
 
@@ -475,6 +523,7 @@ int append_dm_read(const char *path, const DmReadRecord *r) {
  * room_invites.txt
  * 포맷: id//room_id//inviter_id//invitee_id//status//created_at
  * --------------------------------------------------------------- */
+/* 방 초대 파일을 읽어 초대 배열에 채운다. */
 int load_room_invites(const char *path) {
     FILE  *fp;
     char   line[256];
@@ -505,6 +554,7 @@ int load_room_invites(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 현재 방 초대 배열을 파일에 다시 저장한다. */
 void save_room_invites(const char *path) {
     FILE *fp;
     int   i;
@@ -523,6 +573,7 @@ void save_room_invites(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 방 초대 한 건을 파일 끝에 추가한다. */
 int append_room_invite(const char *path, const RoomInviteRecord *r) {
     FILE *fp;
 
@@ -541,6 +592,7 @@ int append_room_invite(const char *path, const RoomInviteRecord *r) {
  * user_settings.txt
  * 포맷: user_id//msg_color//nick_color//theme//ts_format//dnd//welcome_shown
  * --------------------------------------------------------------- */
+/* 사용자 설정 파일을 읽어 설정 배열에 채운다. */
 int load_user_settings(const char *path) {
     FILE  *fp;
     char   line[256];
@@ -572,6 +624,7 @@ int load_user_settings(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 현재 사용자 설정 배열을 파일에 다시 저장한다. */
 void save_user_settings(const char *path) {
     FILE *fp;
     int   i;
@@ -591,6 +644,7 @@ void save_user_settings(const char *path) {
 
 /* 호출자는 g_file_mutex 를 보유해야 한다.
  * user_id 가 이미 존재하면 갱신, 없으면 append. */
+/* 사용자 설정을 새로 넣거나 기존 값을 바꾼다. */
 int upsert_user_settings(const char *path, const UserSettingsRecord *s) {
     int i;
 
@@ -621,6 +675,7 @@ int upsert_user_settings(const char *path, const UserSettingsRecord *s) {
  * room_reads.txt
  * 포맷: room_id//user_id//last_read_msg_id//read_at
  * --------------------------------------------------------------- */
+/* 방 읽음 파일을 읽어 방 읽음 배열에 채운다. */
 int load_room_reads(const char *path) {
     FILE  *fp;
     char   line[256];
@@ -649,6 +704,7 @@ int load_room_reads(const char *path) {
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 현재 방 읽음 배열을 파일에 다시 저장한다. */
 void save_room_reads(const char *path) {
     FILE *fp;
     int   i;
@@ -668,6 +724,7 @@ void save_room_reads(const char *path) {
 
 /* 호출자는 g_file_mutex 를 보유해야 한다.
  * room_id + user_id 조합이 존재하면 갱신, 없으면 신규 추가 후 파일 재작성. */
+/* 방별 마지막 읽은 메시지 번호를 저장하거나 갱신한다. */
 int update_room_read(const char *path, int room_id, const char *user_id,
                      int msg_id, const char *read_at) {
     int i;
@@ -696,6 +753,7 @@ int update_room_read(const char *path, int room_id, const char *user_id,
 }
 
 /* 호출자는 g_file_mutex 를 보유해야 한다. */
+/* 메시지 한 건을 파일 끝에 추가한다. */
 int append_message(const char *path, const MessageRecord *m) {
     FILE *fp;
 

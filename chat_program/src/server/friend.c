@@ -15,6 +15,7 @@
 
 /* receiver_id 가 sender_id 를 차단했는지 확인.
  * g_sessions_mutex 없이 읽기 전용 접근 — 호출 전 mutex 보유 불필요. */
+/* 받는 사람이 보낸 사람을 차단했는지 확인한다. */
 int is_blocked_by(const char *receiver_id, const char *sender_id) {
     int i;
     for (i = 0; i < g_friend_count; i++) {
@@ -38,6 +39,7 @@ static FriendRecord *find_friend_record(const char *a, const char *b) {
     return NULL;
 }
 
+/* 친구 관계를 차단 상태로 바꾼다. */
 int friend_block_user(const char *user_id, const char *target_id) {
     FriendRecord *fr = find_friend_record(user_id, target_id);
     if (fr) {
@@ -64,6 +66,7 @@ int friend_block_user(const char *user_id, const char *target_id) {
     return 1;
 }
 
+/* 차단 상태를 풀고 이전 친구 상태로 되돌린다. */
 int friend_unblock_user(const char *user_id, const char *target_id) {
     int i, k;
     for (i = 0; i < g_friend_count; i++) {
@@ -88,6 +91,7 @@ int friend_unblock_user(const char *user_id, const char *target_id) {
 
 /* FRIEND_ADD_REQ|target_id
  * → FRIEND_ADD_RES|code; 대상이 온라인이면 FRIEND_REQUEST_NOTIFY 전송 */
+/* 친구 추가 요청을 만들고 상대에게 알린다. */
 static void handle_friend_add(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -151,6 +155,7 @@ static void handle_friend_add(ClientSession *sess, char *payload) {
 }
 
 /* FRIEND_ACCEPT|requester_id → 요청자에게 FRIEND_ACCEPT_NOTIFY 전송 */
+/* 받은 친구 요청을 수락 처리한다. */
 static void handle_friend_accept(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -188,6 +193,7 @@ static void handle_friend_accept(ClientSession *sess, char *payload) {
 }
 
 /* FRIEND_REJECT|requester_id — pending 레코드 삭제 */
+/* 받은 친구 요청을 거절 처리한다. */
 static void handle_friend_reject(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -217,6 +223,7 @@ static void handle_friend_reject(ClientSession *sess, char *payload) {
 }
 
 /* FRIEND_DELETE|friend_id — 수락된 친구 관계 제거 */
+/* 친구 관계를 목록에서 제거한다. */
 static void handle_friend_delete(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -248,6 +255,7 @@ static void handle_friend_delete(ClientSession *sess, char *payload) {
 }
 
 /* FRIEND_BLOCK|target_id — 기존 레코드를 차단 상태로 변경하거나 새로 생성 */
+/* 선택한 사용자를 차단한다. */
 static void handle_friend_block(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -285,6 +293,7 @@ static void handle_friend_block(ClientSession *sess, char *payload) {
 }
 
 /* FRIEND_UNBLOCK|target_id */
+/* 선택한 사용자의 차단을 해제한다. */
 static void handle_friend_unblock(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -305,6 +314,7 @@ static void handle_friend_unblock(ClientSession *sess, char *payload) {
 
 /* FRIEND_LIST_REQ|
  * → FRIEND_LIST_RES|count:friend_id:nick:friend_status:status_msg;... (status_msg content-last) */
+/* 현재 친구 목록을 만들어 클라이언트에 보낸다. */
 static void handle_friend_list(ClientSession *sess, char *payload) {
     (void)payload;
     if (sess->user_id[0] == '\0') return;
@@ -358,6 +368,7 @@ static void handle_friend_list(ClientSession *sess, char *payload) {
 
 /* USER_SEARCH_REQ|keyword
  * → USER_SEARCH_RES|count:user_id:nick;... */
+/* 닉네임이나 아이디로 사용자를 검색한다. */
 static void handle_user_search(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -390,6 +401,7 @@ static void handle_user_search(ClientSession *sess, char *payload) {
     send(sess->sock, buf, off, 0);
 }
 
+/* 친구 관련 패킷 처리 함수를 등록한다. */
 void friend_init(void) {
     register_handler(FRIEND_ADD_REQ,  handle_friend_add);
     register_handler(FRIEND_ACCEPT,   handle_friend_accept);

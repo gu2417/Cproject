@@ -8,6 +8,7 @@
 #include "globals.h"
 #include "broadcast.h"
 #include "router.h"
+#include "user_store.h"
 #include "client_handler.h"
 
 /* ---------------------------------------------------------------
@@ -16,10 +17,24 @@
  * 2. g_sessions 슬롯 초기화 (active=0, closesocket)
  * MUTEX: g_sessions_mutex 를 내부에서 획득·해제
  * --------------------------------------------------------------- */
+/* 클라이언트 연결이 끊겼을 때 세션을 정리한다. */
 void leftClient(ClientSession *sess) {
     char msg[256];
+    char user_id[21];
+    char nickname[21];
+    int  was_logged_in = 0;
 
     if (!sess->active) return;
+
+    user_id[0] = '\0';
+    nickname[0] = '\0';
+    if (sess->user_id[0] != '\0') {
+        was_logged_in = 1;
+        strncpy(user_id, sess->user_id, 20);
+        user_id[20] = '\0';
+        strncpy(nickname, sess->nickname, 20);
+        nickname[20] = '\0';
+    }
 
     /* 로그인 상태이고 방 안에 있으면 퇴장 알림 */
     if (sess->user_id[0] != '\0' && sess->room_id > 0) {
@@ -40,6 +55,16 @@ void leftClient(ClientSession *sess) {
     sess->online_status = 0;
     if (g_session_count > 0) g_session_count--;
     ReleaseMutex(g_sessions_mutex);
+
+    if (was_logged_in) {
+        UserRecord *u = find_user_by_id(user_id);
+        if (u) u->online_status = STATUS_OFFLINE;
+        notify_friend_status_change(user_id, STATUS_OFFLINE);
+        update_last_seen(user_id);
+        printf("[서버] 로그아웃: %s (%s)\n",
+               nickname[0] ? nickname : user_id, user_id);
+        fflush(stdout);
+    }
 }
 
 /* ---------------------------------------------------------------
@@ -50,6 +75,7 @@ void leftClient(ClientSession *sess) {
  *   - '\n' 단위로 패킷을 조립하여 route_packet() 에 전달
  *   - recv <= 0 시 반드시 leftClient() 호출 (break 만 하면 안 됨)
  * --------------------------------------------------------------- */
+/* 한 클라이언트의 수신 루프를 맡아 패킷을 라우터로 넘긴다. */
 unsigned WINAPI HandleClient(void *arg) {
     int            slot = (int)(intptr_t)arg;
     ClientSession *sess = &g_sessions[slot];

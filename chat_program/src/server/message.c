@@ -14,6 +14,7 @@
 #include "user_store.h"
 #include "message.h"
 
+/* 긴 시간 문자열에서 HH:MM 부분만 뽑는다. */
 static void msg_ts_hhmm(const char *ts_long, char out[6]) {
     int h = 0, m = 0;
     sscanf(ts_long, "%*d-%*d-%*d %d:%d", &h, &m);
@@ -22,6 +23,7 @@ static void msg_ts_hhmm(const char *ts_long, char out[6]) {
 
 /* "//" 구분자로 line 을 최대 max_f 개 필드로 분리. 마지막 필드는 content-last.
  * 반환값: 파싱된 필드 수. line 은 파괴적으로 수정된다. */
+/* 저장된 한 줄을 파일 구분자로 나누어 배열에 담는다. */
 static int split_fields(char *line, char **f, int max_f) {
     int len = (int)strlen(line);
     while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r'))
@@ -42,6 +44,7 @@ static int split_fields(char *line, char **f, int max_f) {
 }
 
 /* "YYYY-MM-DD HH:MM:SS" 문자열을 time_t 로 변환 */
+/* 저장된 시간 문자열을 비교 가능한 시간 값으로 바꾼다. */
 static time_t parse_timestamp(const char *ts) {
     struct tm t;
     memset(&t, 0, sizeof(t));
@@ -168,6 +171,7 @@ static int do_msg_delete(int msg_id, const char *user_id,
 
 /* MSG_EDIT|room_id:msg_id:new_content  (new_content 은 content-last)
  * 5분 창 체크 → MSG_EDITED_NOTIFY|room_id:msg_id:new_content 브로드캐스트 */
+/* 본인이 쓴 메시지 수정 요청을 처리한다. */
 static void handle_msg_edit(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -216,6 +220,7 @@ static void handle_msg_edit(ClientSession *sess, char *payload) {
 /* MSG_DELETE|room_id:msg_id
  * is_deleted=1 로 표시 → MSG_DELETED_NOTIFY|room_id:msg_id 전송
  * DM(room_id=0)은 두 당사자에게만, 그룹은 방 브로드캐스트 */
+/* 본인이 쓴 메시지 삭제 요청을 처리한다. */
 static void handle_msg_delete(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -257,6 +262,7 @@ static void handle_msg_delete(ClientSession *sess, char *payload) {
 /* MSG_REPLY|room_id:reply_to_id:content  (content-last)
  * 지정 메시지를 인용한 일반 메시지 전송. reply_to_id를 reply_to 필드에 저장.
  * → ROOM_MSG_RECV|room_id:nick:ts:msg_id:reply_to:msg_type:content */
+/* 특정 메시지에 답장하는 요청을 처리한다. */
 static void handle_msg_reply(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -342,6 +348,7 @@ static void handle_msg_reply(ClientSession *sess, char *payload) {
 /* MSG_SEARCH|room_id:keyword  (keyword content-last)
  * g_messages[]에서 room_id+keyword 일치 메시지 검색.
  * → MSG_SEARCH_RES|count:msg_id:from_nick:ts:content;...  (count-first, content-last) */
+/* 방 안 메시지에서 검색어가 들어간 내용을 찾는다. */
 static void handle_msg_search(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -406,6 +413,7 @@ static void handle_msg_search(ClientSession *sess, char *payload) {
 /* WHISPER|room_id:target_id:content  (content content-last)
  * 같은 방에 있는 target_id 에게만 귓속말 전송.
  * → 송신자와 수신자 모두에게 WHISPER_RECV|room_id:from_id:from_nick:content */
+/* 같은 방 사용자에게 보내는 귓속말을 처리한다. */
 static void handle_whisper(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -462,6 +470,7 @@ static void handle_whisper(ClientSession *sess, char *payload) {
 /* MSG_PIN|room_id:msg_id
  * 방장 또는 관리자만 가능. 핀 메시지 갱신 후 MSG_PIN_NOTIFY|room_id:msg_id 브로드캐스트.
  * msg_id=0 이면 핀 해제. */
+/* 방의 고정 메시지를 바꾸고 멤버들에게 알린다. */
 static void handle_msg_pin(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -510,6 +519,7 @@ static void handle_msg_pin(ClientSession *sess, char *payload) {
     }
 }
 
+/* 메시지 관련 패킷 처리 함수를 등록한다. */
 void message_init(void) {
     register_handler(MSG_EDIT,   handle_msg_edit);
     register_handler(MSG_DELETE, handle_msg_delete);

@@ -14,6 +14,7 @@
 
 /* LOGIN_REQ|user_id:pw_hash
  * 클라이언트가 SHA-256 해시 후 전송하므로 서버는 단순 문자열 비교만 한다. */
+/* 로그인 요청을 확인하고 세션 상태를 갱신한다. */
 static void handle_login(ClientSession *sess, char *payload) {
     char *user_id = strtok(payload, ":");
     char *pw_hash = strtok(NULL, "");
@@ -86,6 +87,7 @@ static void handle_login(ClientSession *sess, char *payload) {
 }
 
 /* REGISTER_REQ|user_id:pw_hash:nickname */
+/* 회원가입 요청을 받아 새 사용자 정보를 저장한다. */
 static void handle_register(ClientSession *sess, char *payload) {
     char *user_id  = strtok(payload, ":");
     char *pw_hash  = strtok(NULL, ":");
@@ -155,6 +157,7 @@ static void handle_register(ClientSession *sess, char *payload) {
 }
 
 /* LOGOUT_REQ| */
+/* 로그아웃 요청을 처리하고 접속 상태를 정리한다. */
 static void handle_logout(ClientSession *sess, char *payload) {
     (void)payload;
     if (sess->user_id[0] == '\0') return;
@@ -183,9 +186,11 @@ static void handle_logout(ClientSession *sess, char *payload) {
 
     printf("[서버] 로그아웃: %s (%s)\n",
            nickname[0] ? nickname : user_id, user_id);
+    fflush(stdout);
 }
 
 /* PASS_CHANGE|old_pw_hash:new_pw_hash */
+/* 현재 비밀번호 확인 후 새 비밀번호로 바꾼다. */
 static void handle_pass_change(ClientSession *sess, char *payload) {
     if (sess->user_id[0] == '\0') return;
 
@@ -216,9 +221,170 @@ static void handle_pass_change(ClientSession *sess, char *payload) {
     send_packet(sess->sock, PASS_CHANGE_RES "|0");
 }
 
+/* ACCOUNT_DELETE|pw_hash */
+/* 비밀번호 확인 후 회원 탈퇴를 처리한다. */
+static void handle_account_delete(ClientSession *sess, char *payload) {
+    if (sess->user_id[0] == '\0') return;
+
+    char *pw_hash = payload;
+    int n;
+
+    if (!pw_hash) {
+        send_packet(sess->sock, ACCOUNT_DELETE_RES "|%d", ACCOUNT_DELETE_WRONG_PW);
+        return;
+    }
+
+    n = (int)strlen(pw_hash);
+    while (n > 0 && (pw_hash[n - 1] == '\r' || pw_hash[n - 1] == '\n'))
+        pw_hash[--n] = '\0';
+
+    char user_id[21];
+    char nickname[21];
+    strncpy(user_id, sess->user_id, 20); user_id[20] = '\0';
+    strncpy(nickname, sess->nickname, 20); nickname[20] = '\0';
+
+    UserRecord *u = find_user_by_id(user_id);
+    if (!u || strcmp(u->pw_hash, pw_hash) != 0) {
+        send_packet(sess->sock, ACCOUNT_DELETE_RES "|%d", ACCOUNT_DELETE_WRONG_PW);
+        return;
+    }
+
+    notify_friend_status_change(user_id, STATUS_OFFLINE);
+
+    WaitForSingleObject(g_sessions_mutex, INFINITE);
+    {
+        int i, j;
+        for (i = 0; i < g_room_count; i++) {
+            RoomInfo *ri = &g_rooms[i];
+            if (ri->info.is_deleted) continue;
+
+            if (strcmp(ri->info.owner_id, user_id) == 0) {
+                char nbuf[64];
+                ri->info.is_deleted = 1;
+                snprintf(nbuf, sizeof(nbuf), ROOM_DELETED_NOTIFY "|%d", ri->info.id);
+                for (j = 0; j < MAX_CLIENTS; j++) {
+                    if (g_sessions[j].active && g_sessions[j].room_id == ri->info.id) {
+                        send_packet(g_sessions[j].sock, "%s", nbuf);
+                        g_sessions[j].room_id = 0;
+                    }
+                }
+            } else {
+                for (j = 0; j < ri->member_count; j++) {
+                    if (strcmp(ri->member_ids[j], user_id) == 0) {
+                        int k;
+                        for (k = j; k < ri->member_count - 1; k++) {
+                            strcpy(ri->member_ids[k], ri->member_ids[k + 1]);
+                            ri->admin_flags[k] = ri->admin_flags[k + 1];
+                        }
+                        ri->member_count--;
+                        break;
+                    }
+                }
+            }
+        }
+
+        sess->user_id[0]    = '\0';
+        sess->nickname[0]   = '\0';
+        sess->room_id       = 0;
+        sess->online_status = STATUS_OFFLINE;
+    }
+    ReleaseMutex(g_sessions_mutex);
+
+    WaitForSingleObject(g_file_mutex, INFINITE);
+    {
+        int i, w;
+
+        for (i = 0; i < g_msg_count; i++) {
+            if (strcmp(g_messages[i].from_id, user_id) == 0 ||
+                strcmp(g_messages[i].to_id, user_id) == 0)
+                g_messages[i].is_deleted = 1;
+            if (g_messages[i].room_id > 0) {
+                int ridx = find_room_idx(g_messages[i].room_id);
+                if (ridx >= 0 && g_rooms[ridx].info.is_deleted)
+                    g_messages[i].is_deleted = 1;
+            }
+        }
+
+        for (w = 0, i = 0; i < g_user_count; i++) {
+            if (strcmp(g_users[i].id_str, user_id) == 0) continue;
+            if (w != i) g_users[w] = g_users[i];
+            g_users[w].id = w + 1;
+            w++;
+        }
+        g_user_count = w;
+
+        for (w = 0, i = 0; i < g_friend_count; i++) {
+            if (strcmp(g_friends[i].user_id, user_id) == 0 ||
+                strcmp(g_friends[i].friend_id, user_id) == 0) continue;
+            if (w != i) g_friends[w] = g_friends[i];
+            w++;
+        }
+        g_friend_count = w;
+
+        for (w = 0, i = 0; i < g_room_member_count; i++) {
+            int ridx = find_room_idx(g_room_members[i].room_id);
+            if (strcmp(g_room_members[i].user_id, user_id) == 0) continue;
+            if (ridx >= 0 && g_rooms[ridx].info.is_deleted) continue;
+            if (w != i) g_room_members[w] = g_room_members[i];
+            w++;
+        }
+        g_room_member_count = w;
+
+        for (w = 0, i = 0; i < g_user_settings_count; i++) {
+            if (strcmp(g_user_settings[i].user_id, user_id) == 0) continue;
+            if (w != i) g_user_settings[w] = g_user_settings[i];
+            w++;
+        }
+        g_user_settings_count = w;
+
+        for (w = 0, i = 0; i < g_dm_read_count; i++) {
+            if (strcmp(g_dm_reads[i].reader_id, user_id) == 0) continue;
+            if (w != i) g_dm_reads[w] = g_dm_reads[i];
+            w++;
+        }
+        g_dm_read_count = w;
+
+        for (w = 0, i = 0; i < g_room_read_count; i++) {
+            int ridx = find_room_idx(g_room_reads[i].room_id);
+            if (strcmp(g_room_reads[i].user_id, user_id) == 0) continue;
+            if (ridx >= 0 && g_rooms[ridx].info.is_deleted) continue;
+            if (w != i) g_room_reads[w] = g_room_reads[i];
+            w++;
+        }
+        g_room_read_count = w;
+
+        for (w = 0, i = 0; i < g_room_invite_count; i++) {
+            int ridx = find_room_idx(g_room_invites[i].room_id);
+            if (strcmp(g_room_invites[i].inviter_id, user_id) == 0 ||
+                strcmp(g_room_invites[i].invitee_id, user_id) == 0) continue;
+            if (ridx >= 0 && g_rooms[ridx].info.is_deleted) continue;
+            if (w != i) g_room_invites[w] = g_room_invites[i];
+            w++;
+        }
+        g_room_invite_count = w;
+
+        save_users(FILE_USERS);
+        save_friends(FILE_FRIENDS);
+        save_rooms(FILE_ROOMS);
+        save_room_members(FILE_ROOM_MEMBERS);
+        save_messages(FILE_MESSAGES);
+        save_user_settings(FILE_USER_SETTINGS);
+        save_dm_reads(FILE_DM_READS);
+        save_room_reads(FILE_ROOM_READS);
+        save_room_invites(FILE_ROOM_INVITES);
+    }
+    ReleaseMutex(g_file_mutex);
+
+    send_packet(sess->sock, ACCOUNT_DELETE_RES "|%d", ACCOUNT_DELETE_OK);
+    printf("[서버] 탈퇴: %s (%s)\n", nickname[0] ? nickname : user_id, user_id);
+    fflush(stdout);
+}
+
+/* 인증 관련 패킷 처리 함수를 등록한다. */
 void auth_init(void) {
     register_handler(LOGIN_REQ,    handle_login);
     register_handler(REGISTER_REQ, handle_register);
     register_handler(LOGOUT_REQ,   handle_logout);
     register_handler(PASS_CHANGE,  handle_pass_change);
+    register_handler(ACCOUNT_DELETE, handle_account_delete);
 }

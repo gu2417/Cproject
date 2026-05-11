@@ -14,9 +14,29 @@
 #include "menu_mypage.h"
 #include "menu_settings.h"
 
+/* 대기 중인 초대가 있으면 해당 방 입장을 처리한다. */
+static int JoinPendingInvite(void) {
+    int room_id = g_state.pending_invite_room_id;
+    if (room_id <= 0) return 0;
+
+    g_state.response_received = 0;
+    send_packet(g_state.sock, "%s|%d", ROOM_JOIN, room_id);
+    wait_response(5000);
+
+    if (g_last_code == ROOM_JOIN_OK && g_state.current_room_id == room_id) {
+        ShowChatRoom(room_id, g_state.current_room_name);
+        return 1;
+    }
+
+    g_state.pending_invite_room_id = 0;
+    g_state.pending_invite_room_name[0] = '\0';
+    return 1;
+}
+
 /* ─────────────────────────────────────────────────────────
  * ShowRoomMenu — 그룹채팅(is_open=0) 또는 오픈채팅(is_open=1)
  * ───────────────────────────────────────────────────────── */
+/* 일반 채팅방 또는 오픈채팅방 메뉴를 보여준다. */
 void ShowRoomMenu(int is_open) {
     const char *title = is_open ? "오픈채팅" : "채팅방";
     const char *type  = is_open ? "open"    : "group";
@@ -38,6 +58,9 @@ void ShowRoomMenu(int is_open) {
 
         char ch[4];
         if (!fgets(ch, sizeof(ch), stdin)) break;
+        if (ch[0] == '\n') {
+            if (JoinPendingInvite()) continue;
+        }
 
         if (ch[0] == '0') break;
 
@@ -144,6 +167,7 @@ void ShowRoomMenu(int is_open) {
 /* ─────────────────────────────────────────────────────────
  * ShowMainMenu — 메인 로비
  * ───────────────────────────────────────────────────────── */
+/* 로그인 후 메인 메뉴를 보여준다. */
 void ShowMainMenu(void) {
     char ch[4];
     while (1) {
@@ -163,6 +187,9 @@ void ShowMainMenu(void) {
         fflush(stdout);
 
         if (!fgets(ch, sizeof(ch), stdin)) break;
+        if (ch[0] == '\n') {
+            if (JoinPendingInvite()) continue;
+        }
 
         switch (ch[0]) {
             case '1': ShowFriendMenu();   break;
@@ -177,7 +204,9 @@ void ShowMainMenu(void) {
                 wait_response(5000);
                 break;
             case '8':
+                g_state.response_received = 0;
                 send_packet(g_state.sock, "%s|", LOGOUT_REQ);
+                wait_response(5000);
                 printf("로그아웃합니다.\n");
                 return;
             default:
